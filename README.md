@@ -8,6 +8,7 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Records requests/responses to NDJSON
 - Replays recorded calls without an upstream server
 - Health endpoint for status checks (`GET /healthz`)
+- Supports JSON-RPC batch requests (handled sequentially per item)
 
 ## Quickstart
 ```bash

@@ -4,11 +4,17 @@ import (
   "bytes"
   "context"
   "encoding/json"
+  "io"
+  "os"
   "net/http"
   "net/http/httptest"
   "net/url"
   "testing"
   "time"
+
+  "github.com/sarveshkapre/mcp-proxy-gateway/internal/jsonrpc"
+  "github.com/sarveshkapre/mcp-proxy-gateway/internal/record"
+  "github.com/sarveshkapre/mcp-proxy-gateway/internal/signature"
 )
 
 func TestHealthz(t *testing.T) {
@@ -137,6 +143,103 @@ func TestUpstreamRequestUsesClientContext(t *testing.T) {
   }
 }
 
+func TestBatchReplay(t *testing.T) {
+  req1 := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"a"}}}`)
+  req2 := json.RawMessage(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"b"}}}`)
+
+  replay := mustReplayStore(t, map[string]json.RawMessage{
+    mustSig(t, req1): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true,"n":1}}`),
+    mustSig(t, req2): json.RawMessage(`{"jsonrpc":"2.0","id":2,"result":{"ok":true,"n":2}}`),
+  })
+
+  srv := NewServer(nil, nil, nil, replay, true, 1024, time.Second, nil)
+  batch := json.RawMessage("[" + string(req1) + "," + string(req2) + "]")
+
+  r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+  r.Header.Set("Content-Type", "application/json")
+  w := httptest.NewRecorder()
+  srv.ServeHTTP(w, r)
+
+  if w.Code != http.StatusOK {
+    t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+  }
+
+  var out []map[string]any
+  if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+    t.Fatalf("unmarshal response: %v", err)
+  }
+  if len(out) != 2 {
+    t.Fatalf("expected 2 responses, got %d", len(out))
+  }
+}
+
+func TestBatchForwardsSequentially(t *testing.T) {
+  calls := 0
+  upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    calls++
+    body, _ := io.ReadAll(r.Body)
+    req := jsonrpc.Request{}
+    _ = json.Unmarshal(body, &req)
+
+    w.Header().Set("Content-Type", "application/json")
+    resp, _ := json.Marshal(map[string]any{
+      "jsonrpc": "2.0",
+      "id":      json.RawMessage(req.ID),
+      "result":  map[string]any{"ok": true},
+    })
+    _, _ = w.Write(resp)
+  }))
+  t.Cleanup(upstream.Close)
+
+  upstreamURL, err := url.Parse(upstream.URL)
+  if err != nil {
+    t.Fatalf("parse upstream url: %v", err)
+  }
+  srv := NewServer(upstreamURL, nil, nil, nil, false, 1024, time.Second, nil)
+
+  batch := json.RawMessage(`[
+    {"jsonrpc":"2.0","id":1,"method":"ping"},
+    {"jsonrpc":"2.0","id":2,"method":"ping"}
+  ]`)
+
+  r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+  r.Header.Set("Content-Type", "application/json")
+  w := httptest.NewRecorder()
+  srv.ServeHTTP(w, r)
+
+  if w.Code != http.StatusOK {
+    t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+  }
+
+  var out []map[string]any
+  if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+    t.Fatalf("unmarshal response: %v", err)
+  }
+  if len(out) != 2 {
+    t.Fatalf("expected 2 responses, got %d", len(out))
+  }
+  if calls != 2 {
+    t.Fatalf("expected 2 upstream calls, got %d", calls)
+  }
+}
+
+func TestBatchNotificationsReturn204(t *testing.T) {
+  srv := NewServer(nil, nil, nil, nil, false, 1024, time.Second, nil)
+  batch := json.RawMessage(`[
+    {"jsonrpc":"2.0","method":"ping"},
+    {"jsonrpc":"2.0","method":"ping"}
+  ]`)
+
+  r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+  r.Header.Set("Content-Type", "application/json")
+  w := httptest.NewRecorder()
+  srv.ServeHTTP(w, r)
+
+  if w.Code != http.StatusNoContent {
+    t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+  }
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -148,4 +251,38 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
     t.Fatalf("parse url: %v", err)
   }
   return u
+}
+
+func mustSig(t *testing.T, raw json.RawMessage) string {
+  t.Helper()
+  req := jsonrpc.Request{}
+  if err := json.Unmarshal(raw, &req); err != nil {
+    t.Fatalf("unmarshal request: %v", err)
+  }
+  sig, err := signature.FromRequest(&req)
+  if err != nil {
+    t.Fatalf("compute signature: %v", err)
+  }
+  return sig
+}
+
+func mustReplayStore(t *testing.T, entries map[string]json.RawMessage) *record.ReplayStore {
+  t.Helper()
+  file, err := os.CreateTemp(t.TempDir(), "records-*.ndjson")
+  if err != nil {
+    t.Fatalf("temp file: %v", err)
+  }
+  _ = file.Close()
+
+  rec := record.NewRecorder(file.Name(), nil)
+  for sig, resp := range entries {
+    if err := rec.Append(sig, json.RawMessage(`{"jsonrpc":"2.0"}`), resp); err != nil {
+      t.Fatalf("append: %v", err)
+    }
+  }
+  store, err := record.LoadReplay(file.Name())
+  if err != nil {
+    t.Fatalf("load replay: %v", err)
+  }
+  return store
 }

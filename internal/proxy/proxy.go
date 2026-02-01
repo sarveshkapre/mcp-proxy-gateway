@@ -77,78 +77,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     http.Error(w, "failed to read body", http.StatusBadRequest)
     return
   }
-  if len(body) == 0 {
+  trimmed := bytes.TrimSpace(body)
+  if len(trimmed) == 0 {
     http.Error(w, "empty body", http.StatusBadRequest)
     return
   }
 
-  req := jsonrpc.Request{}
-  if err := json.Unmarshal(body, &req); err != nil {
-    s.writeJSONRPCError(w, json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC", nil)
+  if trimmed[0] == '[' {
+    s.handleBatch(w, r, trimmed)
     return
   }
-  if err := req.Validate(); err != nil {
-    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidRequest, err.Error(), nil)
-    return
-  }
-
-  sig, err := signature.FromRequest(&req)
-  if err != nil {
-    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidRequest, "unable to compute signature", nil)
-    return
-  }
-
-  if s.replay != nil {
-    if resp, ok := s.replay.Lookup(sig); ok {
-      s.writeRawJSON(w, http.StatusOK, resp)
-      return
-    }
-    if s.replayStrict {
-      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "replay miss", nil)
-      return
-    }
-  }
-
-  if req.Method == "tools/call" && s.validator != nil {
-    tool, args, err := parseToolCall(req.Params)
-    if err != nil {
-      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidParams, "invalid tools/call params", nil)
-      return
-    }
-    decision, err := s.validator.ValidateToolCall(tool, args)
-    if err != nil {
-      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "validation error", nil)
-      return
-    }
-    if len(decision.Violations) > 0 && decision.Allowed {
-      s.logger.Printf("validation audit: tool=%s violations=%v", tool, decision.Violations)
-    }
-    if !decision.Allowed {
-      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidParams, "tool call rejected", decision.Violations)
-      return
-    }
-  }
-
-  if s.upstream == nil {
-    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "no upstream configured", nil)
-    return
-  }
-
-  upstreamResp, status, err := s.forward(r.Context(), body)
-  if err != nil {
-    if errors.Is(err, errUpstreamResponseTooLarge) {
-      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream response too large", nil)
-      return
-    }
-    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream error", nil)
-    return
-  }
-
-  if err := s.recorder.Append(sig, body, upstreamResp); err != nil {
-    s.logger.Printf("record append failed: %v", err)
-  }
-
-  s.writeRawJSON(w, status, upstreamResp)
+  s.handleSingle(w, r, trimmed)
 }
 
 func parseToolCall(raw json.RawMessage) (string, json.RawMessage, error) {
@@ -222,5 +161,211 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
     "record_enabled":     s.recorder != nil,
     "replay_enabled":     s.replay != nil,
   })
+  s.writeRawJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byte) {
+  req := jsonrpc.Request{}
+  if err := json.Unmarshal(body, &req); err != nil {
+    s.writeJSONRPCError(w, json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC", nil)
+    return
+  }
+  if err := req.Validate(); err != nil {
+    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidRequest, err.Error(), nil)
+    return
+  }
+
+  sig, err := signature.FromRequest(&req)
+  if err != nil {
+    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidRequest, "unable to compute signature", nil)
+    return
+  }
+
+  if s.replay != nil {
+    if resp, ok := s.replay.Lookup(sig); ok {
+      s.writeRawJSON(w, http.StatusOK, resp)
+      return
+    }
+    if s.replayStrict {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "replay miss", nil)
+      return
+    }
+  }
+
+  if req.Method == "tools/call" && s.validator != nil {
+    tool, args, err := parseToolCall(req.Params)
+    if err != nil {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidParams, "invalid tools/call params", nil)
+      return
+    }
+    decision, err := s.validator.ValidateToolCall(tool, args)
+    if err != nil {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "validation error", nil)
+      return
+    }
+    if len(decision.Violations) > 0 && decision.Allowed {
+      s.logger.Printf("validation audit: tool=%s violations=%v", tool, decision.Violations)
+    }
+    if !decision.Allowed {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrInvalidParams, "tool call rejected", decision.Violations)
+      return
+    }
+  }
+
+  if s.upstream == nil {
+    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "no upstream configured", nil)
+    return
+  }
+
+  upstreamResp, status, err := s.forward(r.Context(), body)
+  if err != nil {
+    if errors.Is(err, errUpstreamResponseTooLarge) {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream response too large", nil)
+      return
+    }
+    s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream error", nil)
+    return
+  }
+
+  if err := s.recorder.Append(sig, json.RawMessage(body), upstreamResp); err != nil {
+    s.logger.Printf("record append failed: %v", err)
+  }
+
+  s.writeRawJSON(w, status, upstreamResp)
+}
+
+func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, body []byte) {
+  var items []json.RawMessage
+  if err := json.Unmarshal(body, &items); err != nil {
+    s.writeJSONRPCError(w, json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC", nil)
+    return
+  }
+  if len(items) == 0 {
+    s.writeJSONRPCError(w, json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC batch", nil)
+    return
+  }
+
+  responses := make([]json.RawMessage, 0, len(items))
+  for _, item := range items {
+    itemTrimmed := bytes.TrimSpace(item)
+    if len(itemTrimmed) == 0 {
+      resp := jsonrpc.ErrorResponse(json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC", nil)
+      payload, _ := json.Marshal(resp)
+      responses = append(responses, json.RawMessage(payload))
+      continue
+    }
+
+    req := jsonrpc.Request{}
+    if err := json.Unmarshal(itemTrimmed, &req); err != nil {
+      resp := jsonrpc.ErrorResponse(json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "invalid JSON-RPC", nil)
+      payload, _ := json.Marshal(resp)
+      responses = append(responses, json.RawMessage(payload))
+      continue
+    }
+
+    if err := req.Validate(); err != nil {
+      resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrInvalidRequest, err.Error(), nil)
+      payload, _ := json.Marshal(resp)
+      responses = append(responses, json.RawMessage(payload))
+      continue
+    }
+
+    sig, err := signature.FromRequest(&req)
+    if err != nil {
+      resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrInvalidRequest, "unable to compute signature", nil)
+      payload, _ := json.Marshal(resp)
+      responses = append(responses, json.RawMessage(payload))
+      continue
+    }
+
+    if s.replay != nil {
+      if resp, ok := s.replay.Lookup(sig); ok {
+        if len(req.ID) > 0 {
+          responses = append(responses, resp)
+        }
+        continue
+      }
+      if s.replayStrict && len(req.ID) > 0 {
+        resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "replay miss", nil)
+        payload, _ := json.Marshal(resp)
+        responses = append(responses, json.RawMessage(payload))
+        continue
+      }
+    }
+
+    if req.Method == "tools/call" && s.validator != nil {
+      tool, args, err := parseToolCall(req.Params)
+      if err != nil {
+        if len(req.ID) > 0 {
+          resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrInvalidParams, "invalid tools/call params", nil)
+          payload, _ := json.Marshal(resp)
+          responses = append(responses, json.RawMessage(payload))
+        }
+        continue
+      }
+      decision, err := s.validator.ValidateToolCall(tool, args)
+      if err != nil {
+        if len(req.ID) > 0 {
+          resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "validation error", nil)
+          payload, _ := json.Marshal(resp)
+          responses = append(responses, json.RawMessage(payload))
+        }
+        continue
+      }
+      if len(decision.Violations) > 0 && decision.Allowed {
+        s.logger.Printf("validation audit: tool=%s violations=%v", tool, decision.Violations)
+      }
+      if !decision.Allowed {
+        if len(req.ID) > 0 {
+          resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrInvalidParams, "tool call rejected", decision.Violations)
+          payload, _ := json.Marshal(resp)
+          responses = append(responses, json.RawMessage(payload))
+        }
+        continue
+      }
+    }
+
+    if s.upstream == nil {
+      if len(req.ID) > 0 {
+        resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "no upstream configured", nil)
+        payload, _ := json.Marshal(resp)
+        responses = append(responses, json.RawMessage(payload))
+      }
+      continue
+    }
+
+    upstreamResp, _, err := s.forward(r.Context(), itemTrimmed)
+    if err != nil {
+      if len(req.ID) > 0 {
+        msg := "upstream error"
+        if errors.Is(err, errUpstreamResponseTooLarge) {
+          msg = "upstream response too large"
+        }
+        resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, msg, nil)
+        payload, _ := json.Marshal(resp)
+        responses = append(responses, json.RawMessage(payload))
+      }
+      continue
+    }
+
+    if len(upstreamResp) > 0 {
+      if err := s.recorder.Append(sig, json.RawMessage(itemTrimmed), upstreamResp); err != nil {
+        s.logger.Printf("record append failed: %v", err)
+      }
+      if len(req.ID) > 0 {
+        responses = append(responses, upstreamResp)
+      }
+    } else if len(req.ID) > 0 {
+      resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "empty upstream response", nil)
+      payload, _ := json.Marshal(resp)
+      responses = append(responses, json.RawMessage(payload))
+    }
+  }
+
+  if len(responses) == 0 {
+    w.WriteHeader(http.StatusNoContent)
+    return
+  }
+  payload, _ := json.Marshal(responses)
   s.writeRawJSON(w, http.StatusOK, payload)
 }

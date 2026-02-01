@@ -10,6 +10,7 @@
   - upstream requests honor client cancellation
   - `make lint` auto-installs `golangci-lint`
 - Add optional recording redaction config (`policy.record`) to reduce risk of persisting secrets in NDJSON.
+- Add JSON-RPC batch support (sequential per-item processing).
 
 ## Next
 - Consider batch JSON-RPC support.
