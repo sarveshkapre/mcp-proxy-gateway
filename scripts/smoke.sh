@@ -32,4 +32,7 @@ response=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/r
 echo "$response" | grep -q '"jsonrpc"' 
 echo "$response" | grep -q '"Example"'
 
+health=$(curl -sS "http://localhost:${PORT}/healthz")
+echo "$health" | grep -q '"ok":true'
+
 echo "smoke ok"

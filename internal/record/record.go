@@ -70,6 +70,9 @@ func LoadReplay(path string) (*ReplayStore, error) {
 
   store := &ReplayStore{entries: map[string]json.RawMessage{}}
   scanner := bufio.NewScanner(file)
+  // Entries can be large (request + response bodies). Increase the scanner limit
+  // to avoid failing on valid recordings.
+  scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
   for scanner.Scan() {
     line := scanner.Bytes()
     if len(line) == 0 {

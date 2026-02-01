@@ -7,6 +7,7 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Validates `tools/call` arguments with JSON Schema
 - Records requests/responses to NDJSON
 - Replays recorded calls without an upstream server
+- Health endpoint for status checks (`GET /healthz`)
 
 ## Quickstart
 ```bash
@@ -20,6 +21,7 @@ make build
 ```
 
 Send JSON-RPC requests to `http://localhost:8080/rpc`.
+Check health at `http://localhost:8080/healthz`.
 
 ## Demo (replay)
 ```bash

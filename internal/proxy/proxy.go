@@ -2,7 +2,9 @@ package proxy
 
 import (
   "bytes"
+  "context"
   "encoding/json"
+  "errors"
   "io"
   "log"
   "net/http"
@@ -14,6 +16,8 @@ import (
   "github.com/sarveshkapre/mcp-proxy-gateway/internal/signature"
   "github.com/sarveshkapre/mcp-proxy-gateway/internal/validate"
 )
+
+var errUpstreamResponseTooLarge = errors.New("upstream response too large")
 
 type Server struct {
   upstream     *url.URL
@@ -48,6 +52,11 @@ func NewServer(upstream *url.URL, validator *validate.Validator, recorder *recor
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+  if r.URL.Path == "/healthz" {
+    s.handleHealthz(w, r)
+    return
+  }
+
   if r.Method != http.MethodPost {
     http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
     return
@@ -57,8 +66,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  body, err := io.ReadAll(io.LimitReader(r.Body, s.maxBody))
+  r.Body = http.MaxBytesReader(w, r.Body, s.maxBody)
+  body, err := io.ReadAll(r.Body)
   if err != nil {
+    var maxErr *http.MaxBytesError
+    if errors.As(err, &maxErr) {
+      s.writeJSONRPCErrorStatus(w, http.StatusRequestEntityTooLarge, json.RawMessage("null"), jsonrpc.ErrInvalidRequest, "request too large", nil)
+      return
+    }
     http.Error(w, "failed to read body", http.StatusBadRequest)
     return
   }
@@ -119,8 +134,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  upstreamResp, status, err := s.forward(body)
+  upstreamResp, status, err := s.forward(r.Context(), body)
   if err != nil {
+    if errors.Is(err, errUpstreamResponseTooLarge) {
+      s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream response too large", nil)
+      return
+    }
     s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream error", nil)
     return
   }
@@ -149,8 +168,8 @@ func parseToolCall(raw json.RawMessage) (string, json.RawMessage, error) {
   return params.Tool, params.Arguments, nil
 }
 
-func (s *Server) forward(body []byte) (json.RawMessage, int, error) {
-  req, err := http.NewRequest(http.MethodPost, s.upstream.String(), bytes.NewReader(body))
+func (s *Server) forward(ctx context.Context, body []byte) (json.RawMessage, int, error) {
+  req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.upstream.String(), bytes.NewReader(body))
   if err != nil {
     return nil, http.StatusBadGateway, err
   }
@@ -160,21 +179,48 @@ func (s *Server) forward(body []byte) (json.RawMessage, int, error) {
     return nil, http.StatusBadGateway, err
   }
   defer resp.Body.Close()
-  respBody, err := io.ReadAll(io.LimitReader(resp.Body, s.maxBody))
+  respBody, err := io.ReadAll(io.LimitReader(resp.Body, s.maxBody+1))
   if err != nil {
     return nil, http.StatusBadGateway, err
+  }
+  if int64(len(respBody)) > s.maxBody {
+    return nil, http.StatusBadGateway, errUpstreamResponseTooLarge
   }
   return json.RawMessage(respBody), resp.StatusCode, nil
 }
 
 func (s *Server) writeJSONRPCError(w http.ResponseWriter, id json.RawMessage, code int, message string, data any) {
+  s.writeJSONRPCErrorStatus(w, http.StatusOK, id, code, message, data)
+}
+
+func (s *Server) writeJSONRPCErrorStatus(w http.ResponseWriter, status int, id json.RawMessage, code int, message string, data any) {
   resp := jsonrpc.ErrorResponse(id, code, message, data)
   payload, _ := json.Marshal(resp)
-  s.writeRawJSON(w, http.StatusOK, payload)
+  s.writeRawJSON(w, status, payload)
 }
 
 func (s *Server) writeRawJSON(w http.ResponseWriter, status int, payload []byte) {
   w.Header().Set("Content-Type", "application/json")
   w.WriteHeader(status)
   _, _ = w.Write(payload)
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+  if r.Method != http.MethodGet && r.Method != http.MethodHead {
+    http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+    return
+  }
+  w.Header().Set("Cache-Control", "no-store")
+  if r.Method == http.MethodHead {
+    w.WriteHeader(http.StatusOK)
+    return
+  }
+
+  payload, _ := json.Marshal(map[string]any{
+    "ok":                true,
+    "upstream_configured": s.upstream != nil,
+    "record_enabled":     s.recorder != nil,
+    "replay_enabled":     s.replay != nil,
+  })
+  s.writeRawJSON(w, http.StatusOK, payload)
 }

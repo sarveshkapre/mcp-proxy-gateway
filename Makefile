@@ -1,8 +1,12 @@
 BINARY_NAME := mcp-proxy-gateway
 BIN_DIR := bin
 GOLANGCI_LINT := $(shell go env GOPATH)/bin/golangci-lint
+GOLANGCI_LINT_VERSION := v1.64.8
 
 .PHONY: setup dev test lint typecheck build check smoke release
+
+$(GOLANGCI_LINT):
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 setup:
 	go mod download
@@ -13,7 +17,7 @@ dev:
 test:
 	go test ./...
 
-lint:
+lint: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run
 
 typecheck:

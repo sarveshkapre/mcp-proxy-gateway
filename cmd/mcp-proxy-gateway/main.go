@@ -1,11 +1,14 @@
 package main
 
 import (
+  "context"
   "flag"
   "log"
   "net/http"
   "net/url"
   "os"
+  "os/signal"
+  "syscall"
   "time"
 
   "github.com/sarveshkapre/mcp-proxy-gateway/internal/config"
@@ -60,13 +63,34 @@ func main() {
     ReadHeaderTimeout: 5 * time.Second,
   }
 
+  ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+  defer stop()
+
   logger.Printf("listening on %s", *listen)
+  logger.Printf("endpoints: POST /rpc, GET /healthz")
   if upstreamURL != nil {
     logger.Printf("upstream %s", upstreamURL.String())
   } else {
     logger.Printf("no upstream configured")
   }
-  if err := httpServer.ListenAndServe(); err != nil {
-    logger.Fatalf("server error: %v", err)
+
+  serverErr := make(chan error, 1)
+  go func() {
+    serverErr <- httpServer.ListenAndServe()
+  }()
+
+  select {
+  case <-ctx.Done():
+    logger.Printf("shutting down")
+    shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    if err := httpServer.Shutdown(shutdownCtx); err != nil {
+      logger.Fatalf("shutdown error: %v", err)
+    }
+    logger.Printf("shutdown complete")
+  case err := <-serverErr:
+    if err != nil && err != http.ErrServerClosed {
+      logger.Fatalf("server error: %v", err)
+    }
   }
 }
