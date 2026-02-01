@@ -1,6 +1,7 @@
 package record
 
 import (
+  "bytes"
   "encoding/json"
   "os"
   "testing"
@@ -72,5 +73,34 @@ func TestReplayStoreLargeLine(t *testing.T) {
   }
   if _, ok := store.Lookup("bigline"); !ok {
     t.Fatalf("expected replay hit")
+  }
+}
+
+func TestRecorder_RedactsBeforeWriting(t *testing.T) {
+  file, err := os.CreateTemp(t.TempDir(), "records-*.ndjson")
+  if err != nil {
+    t.Fatalf("temp file: %v", err)
+  }
+  _ = file.Close()
+
+  redactor, err := NewRedactor([]string{"token"}, nil)
+  if err != nil {
+    t.Fatalf("new redactor: %v", err)
+  }
+
+  rec := NewRecorder(file.Name(), redactor)
+  if err := rec.Append("sig", json.RawMessage(`{"token":"abc"}`), json.RawMessage(`{"ok":true,"token":"def"}`)); err != nil {
+    t.Fatalf("append: %v", err)
+  }
+
+  data, err := os.ReadFile(file.Name())
+  if err != nil {
+    t.Fatalf("read: %v", err)
+  }
+  if !bytes.Contains(data, []byte(`"token":"[REDACTED]"`)) {
+    t.Fatalf("expected redaction in file, got=%s", string(data))
+  }
+  if bytes.Contains(data, []byte(`"token":"abc"`)) || bytes.Contains(data, []byte(`"token":"def"`)) {
+    t.Fatalf("expected secrets to be removed, got=%s", string(data))
   }
 }

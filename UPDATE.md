@@ -9,7 +9,7 @@
   - replay loader supports large lines
   - upstream requests honor client cancellation
   - `make lint` auto-installs `golangci-lint`
+- Add optional recording redaction config (`policy.record`) to reduce risk of persisting secrets in NDJSON.
 
 ## Next
-- Add recording redaction rules (denylist keys/regex).
 - Consider batch JSON-RPC support.

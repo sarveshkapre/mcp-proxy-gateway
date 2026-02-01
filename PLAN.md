@@ -28,6 +28,6 @@ make build
 - 2026-02-01: Reliability/ops polish (graceful shutdown, `/healthz`, size-limit handling, replay load supports large lines, lint auto-installs).
 
 ## Next to ship
-- Add redaction hooks for recordings (denylist keys / regexes).
+- Add redaction hooks for recordings (denylist keys / regexes). ✅ (see `policy.record`)
 - Add batch JSON-RPC support (validate each request, preserve ordering).
 - Expand replay matching options (method-only, tool-only, and strict sig).

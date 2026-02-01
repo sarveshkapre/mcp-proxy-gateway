@@ -17,6 +17,12 @@ type Policy struct {
   AllowTools  []string             `json:"allow_tools" yaml:"allow_tools"`
   DenyTools   []string             `json:"deny_tools" yaml:"deny_tools"`
   Tools       map[string]ToolEntry `json:"tools" yaml:"tools"`
+  Record      RecordPolicy         `json:"record" yaml:"record"`
+}
+
+type RecordPolicy struct {
+  RedactKeys    []string `json:"redact_keys" yaml:"redact_keys"`
+  RedactKeyRegex []string `json:"redact_key_regex" yaml:"redact_key_regex"`
 }
 
 type ToolEntry struct {

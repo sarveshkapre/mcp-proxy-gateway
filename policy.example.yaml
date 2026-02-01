@@ -4,6 +4,13 @@ allow_tools:
   - web.search
   - fs.read
 
+record:
+  # Redaction is applied before writing NDJSON recordings.
+  # Use this to avoid accidentally persisting secrets in record files.
+  redact_keys: ["token", "access_token", "api_key", "authorization"]
+  # Optional: regex match on JSON object keys.
+  redact_key_regex: ["(?i)secret|password"]
+
 tools:
   web.search:
     schema:

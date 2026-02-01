@@ -18,13 +18,14 @@ type Entry struct {
 type Recorder struct {
   path string
   mu   sync.Mutex
+  redactor *Redactor
 }
 
-func NewRecorder(path string) *Recorder {
+func NewRecorder(path string, redactor *Redactor) *Recorder {
   if path == "" {
     return nil
   }
-  return &Recorder{path: path}
+  return &Recorder{path: path, redactor: redactor}
 }
 
 func (r *Recorder) Append(signature string, request, response json.RawMessage) error {
@@ -40,11 +41,25 @@ func (r *Recorder) Append(signature string, request, response json.RawMessage) e
   }
   defer file.Close()
 
+  req := request
+  resp := response
+  if r.redactor != nil {
+    var err error
+    req, err = r.redactor.Apply(request)
+    if err != nil {
+      return err
+    }
+    resp, err = r.redactor.Apply(response)
+    if err != nil {
+      return err
+    }
+  }
+
   entry := Entry{
     Time:      time.Now().UTC().Format(time.RFC3339Nano),
     Signature: signature,
-    Request:   request,
-    Response:  response,
+    Request:   req,
+    Response:  resp,
   }
   data, err := json.Marshal(entry)
   if err != nil {

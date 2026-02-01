@@ -49,7 +49,15 @@ func main() {
     logger.Fatalf("failed to init validator: %v", err)
   }
 
-  recorder := record.NewRecorder(*recordPath)
+  recordPolicy := config.RecordPolicy{}
+  if policy != nil {
+    recordPolicy = policy.Record
+  }
+  redactor, err := record.NewRedactor(recordPolicy.RedactKeys, recordPolicy.RedactKeyRegex)
+  if err != nil {
+    logger.Fatalf("failed to init record redactor: %v", err)
+  }
+  recorder := record.NewRecorder(*recordPath, redactor)
   replay, err := record.LoadReplay(*replayPath)
   if err != nil {
     logger.Fatalf("failed to load replay file: %v", err)

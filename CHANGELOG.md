@@ -7,6 +7,7 @@
 - Make replay loader handle large NDJSON lines.
 - Propagate client request cancellation to upstream requests.
 - Make `make lint` auto-install `golangci-lint` if missing.
+- Add optional redaction for recordings via `policy.record.redact_keys` / `policy.record.redact_key_regex`.
 
 ## 0.1.0 - 2026-02-01
 - Initial scaffold.

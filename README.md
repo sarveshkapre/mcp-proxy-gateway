@@ -48,6 +48,11 @@ allow_tools:
   - web.search
   - fs.read
 
+record:
+  # Redaction is applied before writing NDJSON recordings.
+  redact_keys: ["token", "access_token", "api_key", "authorization"]
+  redact_key_regex: ["(?i)secret|password"]
+
 tools:
   web.search:
     schema:
