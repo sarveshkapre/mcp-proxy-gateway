@@ -1,0 +1,1 @@
+{"time":"2026-02-01T00:00:00Z","signature":"f2f2888c2c5812601a0e2b1c0c9ac6a6a1a7f911b8b6d8c6b30b3f882c3a56e0","request":{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}},"response":{"jsonrpc":"2.0","id":1,"result":{"items":[{"title":"Example","url":"https://example.com"}]}}}

@@ -1,0 +1,32 @@
+version: 1
+mode: enforce
+allow_tools:
+  - web.search
+  - fs.read
+
+tools:
+  web.search:
+    schema:
+      type: object
+      properties:
+        query:
+          type: string
+        max_results:
+          type: integer
+          minimum: 1
+          maximum: 10
+      required: [query]
+      additionalProperties: false
+
+  fs.read:
+    schema:
+      type: object
+      properties:
+        path:
+          type: string
+        max_bytes:
+          type: integer
+          minimum: 1
+          maximum: 1048576
+      required: [path]
+      additionalProperties: false

@@ -1,0 +1,4 @@
+# CHANGELOG
+
+## Unreleased
+- Initial scaffold.
