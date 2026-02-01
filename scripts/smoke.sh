@@ -22,8 +22,19 @@ go run ./cmd/mcp-proxy-gateway \
   >/tmp/mcp-proxy-gateway-smoke.log 2>&1 &
 SERVER_PID=$!
 
-# Give the server a moment to start.
-sleep 0.5
+# Wait for server to be ready (retry for ~5s).
+ready=0
+for _ in $(seq 1 25); do
+  if curl -sS "http://localhost:${PORT}/healthz" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 0.2
+done
+if [ "$ready" -ne 1 ]; then
+  echo "server not ready" >&2
+  exit 1
+fi
 
 response=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/rpc" \
   -H 'Content-Type: application/json' \

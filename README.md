@@ -41,6 +41,12 @@ curl -sS -X POST http://localhost:8080/rpc \
   --replay-strict
 ```
 
+Replay lookup matching is configurable in the policy:
+```yaml
+replay:
+  match: signature # signature (default), method, or tool
+```
+
 ## Policy example
 ```yaml
 version: 1

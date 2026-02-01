@@ -5,10 +5,10 @@ import (
   "context"
   "encoding/json"
   "io"
-  "os"
   "net/http"
   "net/http/httptest"
   "net/url"
+  "os"
   "testing"
   "time"
 
@@ -280,7 +280,7 @@ func mustReplayStore(t *testing.T, entries map[string]json.RawMessage) *record.R
       t.Fatalf("append: %v", err)
     }
   }
-  store, err := record.LoadReplay(file.Name())
+  store, err := record.LoadReplay(file.Name(), record.ReplayMatchSignature)
   if err != nil {
     t.Fatalf("load replay: %v", err)
   }

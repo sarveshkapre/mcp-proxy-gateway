@@ -50,15 +50,17 @@ func main() {
   }
 
   recordPolicy := config.RecordPolicy{}
+  replayPolicy := config.ReplayPolicy{}
   if policy != nil {
     recordPolicy = policy.Record
+    replayPolicy = policy.Replay
   }
   redactor, err := record.NewRedactor(recordPolicy.RedactKeys, recordPolicy.RedactKeyRegex)
   if err != nil {
     logger.Fatalf("failed to init record redactor: %v", err)
   }
   recorder := record.NewRecorder(*recordPath, redactor)
-  replay, err := record.LoadReplay(*replayPath)
+  replay, err := record.LoadReplay(*replayPath, record.ReplayMatch(replayPolicy.Match))
   if err != nil {
     logger.Fatalf("failed to load replay file: %v", err)
   }

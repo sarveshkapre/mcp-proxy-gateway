@@ -30,4 +30,4 @@ make build
 ## Next to ship
 - Add redaction hooks for recordings (denylist keys / regexes). ✅ (see `policy.record`)
 - Add batch JSON-RPC support (validate each request, preserve ordering). ✅
-- Expand replay matching options (method-only, tool-only, and strict sig).
+- Expand replay matching options (method-only, tool-only, and strict sig). ✅ (see `policy.replay.match`)

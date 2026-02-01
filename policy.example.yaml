@@ -11,6 +11,10 @@ record:
   # Optional: regex match on JSON object keys.
   redact_key_regex: ["(?i)secret|password"]
 
+replay:
+  # Match strategy for replay lookups: signature (default), method, or tool.
+  match: signature
+
 tools:
   web.search:
     schema:

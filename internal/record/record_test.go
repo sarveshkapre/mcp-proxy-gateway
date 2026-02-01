@@ -5,6 +5,8 @@ import (
   "encoding/json"
   "os"
   "testing"
+
+  "github.com/sarveshkapre/mcp-proxy-gateway/internal/jsonrpc"
 )
 
 func TestReplayStore(t *testing.T) {
@@ -28,11 +30,15 @@ func TestReplayStore(t *testing.T) {
     t.Fatalf("write: %v", err)
   }
 
-  store, err := LoadReplay(file.Name())
+  store, err := LoadReplay(file.Name(), ReplayMatchSignature)
   if err != nil {
     t.Fatalf("load replay: %v", err)
   }
-  got, ok := store.Lookup("abc123")
+  reqObj := jsonrpc.Request{}
+  if err := json.Unmarshal(entry.Request, &reqObj); err != nil {
+    t.Fatalf("unmarshal request: %v", err)
+  }
+  got, ok := store.Lookup(&reqObj, "abc123")
   if !ok {
     t.Fatalf("expected replay hit")
   }
@@ -67,12 +73,88 @@ func TestReplayStoreLargeLine(t *testing.T) {
     t.Fatalf("write: %v", err)
   }
 
-  store, err := LoadReplay(file.Name())
+  store, err := LoadReplay(file.Name(), ReplayMatchSignature)
   if err != nil {
     t.Fatalf("load replay: %v", err)
   }
-  if _, ok := store.Lookup("bigline"); !ok {
+  reqObj := jsonrpc.Request{}
+  if err := json.Unmarshal(entry.Request, &reqObj); err != nil {
+    t.Fatalf("unmarshal request: %v", err)
+  }
+  if _, ok := store.Lookup(&reqObj, "bigline"); !ok {
     t.Fatalf("expected replay hit")
+  }
+}
+
+func TestReplayMatchByMethod(t *testing.T) {
+  file, err := os.CreateTemp(t.TempDir(), "records-*.ndjson")
+  if err != nil {
+    t.Fatalf("temp file: %v", err)
+  }
+  defer file.Close()
+
+  req := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+  entry := Entry{
+    Time:      "2024-01-01T00:00:00Z",
+    Signature: "abc123",
+    Request:   req,
+    Response:  json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+  }
+  data, err := json.Marshal(entry)
+  if err != nil {
+    t.Fatalf("marshal: %v", err)
+  }
+  if _, err := file.Write(append(data, '\n')); err != nil {
+    t.Fatalf("write: %v", err)
+  }
+
+  store, err := LoadReplay(file.Name(), ReplayMatchMethod)
+  if err != nil {
+    t.Fatalf("load replay: %v", err)
+  }
+  reqObj := jsonrpc.Request{}
+  if err := json.Unmarshal(req, &reqObj); err != nil {
+    t.Fatalf("unmarshal request: %v", err)
+  }
+  got, ok := store.Lookup(&reqObj, "")
+  if !ok || len(got) == 0 {
+    t.Fatalf("expected replay hit by method")
+  }
+}
+
+func TestReplayMatchByTool(t *testing.T) {
+  file, err := os.CreateTemp(t.TempDir(), "records-*.ndjson")
+  if err != nil {
+    t.Fatalf("temp file: %v", err)
+  }
+  defer file.Close()
+
+  req := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hi"}}}`)
+  entry := Entry{
+    Time:      "2024-01-01T00:00:00Z",
+    Signature: "def456",
+    Request:   req,
+    Response:  json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+  }
+  data, err := json.Marshal(entry)
+  if err != nil {
+    t.Fatalf("marshal: %v", err)
+  }
+  if _, err := file.Write(append(data, '\n')); err != nil {
+    t.Fatalf("write: %v", err)
+  }
+
+  store, err := LoadReplay(file.Name(), ReplayMatchTool)
+  if err != nil {
+    t.Fatalf("load replay: %v", err)
+  }
+  reqObj := jsonrpc.Request{}
+  if err := json.Unmarshal(req, &reqObj); err != nil {
+    t.Fatalf("unmarshal request: %v", err)
+  }
+  got, ok := store.Lookup(&reqObj, "")
+  if !ok || len(got) == 0 {
+    t.Fatalf("expected replay hit by tool")
   }
 }
 

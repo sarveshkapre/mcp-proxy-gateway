@@ -182,7 +182,7 @@ func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byt
   }
 
   if s.replay != nil {
-    if resp, ok := s.replay.Lookup(sig); ok {
+    if resp, ok := s.replay.Lookup(&req, sig); ok {
       s.writeRawJSON(w, http.StatusOK, resp)
       return
     }
@@ -279,7 +279,7 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, body []byte
     }
 
     if s.replay != nil {
-      if resp, ok := s.replay.Lookup(sig); ok {
+      if resp, ok := s.replay.Lookup(&req, sig); ok {
         if len(req.ID) > 0 {
           responses = append(responses, resp)
         }

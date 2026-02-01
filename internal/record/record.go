@@ -3,9 +3,12 @@ package record
 import (
   "bufio"
   "encoding/json"
+  "errors"
   "os"
   "sync"
   "time"
+
+  "github.com/sarveshkapre/mcp-proxy-gateway/internal/jsonrpc"
 )
 
 type Entry struct {
@@ -70,12 +73,26 @@ func (r *Recorder) Append(signature string, request, response json.RawMessage) e
 }
 
 type ReplayStore struct {
-  entries map[string]json.RawMessage
+  match      ReplayMatch
+  bySignature map[string]json.RawMessage
+  byMethod    map[string]json.RawMessage
+  byTool      map[string]json.RawMessage
 }
 
-func LoadReplay(path string) (*ReplayStore, error) {
+type ReplayMatch string
+
+const (
+  ReplayMatchSignature ReplayMatch = "signature"
+  ReplayMatchMethod    ReplayMatch = "method"
+  ReplayMatchTool      ReplayMatch = "tool"
+)
+
+func LoadReplay(path string, match ReplayMatch) (*ReplayStore, error) {
   if path == "" {
     return nil, nil
+  }
+  if match == "" {
+    match = ReplayMatchSignature
   }
   file, err := os.Open(path)
   if err != nil {
@@ -83,7 +100,12 @@ func LoadReplay(path string) (*ReplayStore, error) {
   }
   defer file.Close()
 
-  store := &ReplayStore{entries: map[string]json.RawMessage{}}
+  store := &ReplayStore{
+    match:       match,
+    bySignature: map[string]json.RawMessage{},
+    byMethod:    map[string]json.RawMessage{},
+    byTool:      map[string]json.RawMessage{},
+  }
   scanner := bufio.NewScanner(file)
   // Entries can be large (request + response bodies). Increase the scanner limit
   // to avoid failing on valid recordings.
@@ -100,7 +122,30 @@ func LoadReplay(path string) (*ReplayStore, error) {
     if entry.Signature == "" || len(entry.Response) == 0 {
       continue
     }
-    store.entries[entry.Signature] = entry.Response
+    if _, exists := store.bySignature[entry.Signature]; !exists {
+      store.bySignature[entry.Signature] = entry.Response
+    }
+
+    if len(entry.Request) == 0 {
+      continue
+    }
+    req := jsonrpc.Request{}
+    if err := json.Unmarshal(entry.Request, &req); err != nil {
+      continue
+    }
+    if req.Method != "" {
+      if _, exists := store.byMethod[req.Method]; !exists {
+        store.byMethod[req.Method] = entry.Response
+      }
+    }
+    if req.Method == "tools/call" {
+      tool, err := extractToolName(req.Params)
+      if err == nil && tool != "" {
+        if _, exists := store.byTool[tool]; !exists {
+          store.byTool[tool] = entry.Response
+        }
+      }
+    }
   }
   if err := scanner.Err(); err != nil {
     return nil, err
@@ -108,10 +153,48 @@ func LoadReplay(path string) (*ReplayStore, error) {
   return store, nil
 }
 
-func (r *ReplayStore) Lookup(signature string) (json.RawMessage, bool) {
+func (r *ReplayStore) Lookup(req *jsonrpc.Request, signature string) (json.RawMessage, bool) {
   if r == nil {
     return nil, false
   }
-  resp, ok := r.entries[signature]
-  return resp, ok
+  switch r.match {
+  case ReplayMatchMethod:
+    if req == nil || req.Method == "" {
+      return nil, false
+    }
+    resp, ok := r.byMethod[req.Method]
+    return resp, ok
+  case ReplayMatchTool:
+    if req == nil || req.Method != "tools/call" {
+      return nil, false
+    }
+    tool, err := extractToolName(req.Params)
+    if err != nil || tool == "" {
+      return nil, false
+    }
+    resp, ok := r.byTool[tool]
+    return resp, ok
+  default:
+    if signature == "" {
+      return nil, false
+    }
+    resp, ok := r.bySignature[signature]
+    return resp, ok
+  }
+}
+
+func extractToolName(params json.RawMessage) (string, error) {
+  if len(params) == 0 {
+    return "", errors.New("missing params")
+  }
+  var data struct {
+    Tool string `json:"tool"`
+  }
+  if err := json.Unmarshal(params, &data); err != nil {
+    return "", err
+  }
+  if data.Tool == "" {
+    return "", errors.New("missing tool")
+  }
+  return data.Tool, nil
 }
