@@ -21,6 +21,15 @@ make build
 
 Send JSON-RPC requests to `http://localhost:8080/rpc`.
 
+## Demo (replay)
+```bash
+make build
+./bin/mcp-proxy-gateway --listen :8080 --replay ./records.example.ndjson --replay-strict
+curl -sS -X POST http://localhost:8080/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}}'
+```
+
 ## Replay mode
 ```bash
 ./bin/mcp-proxy-gateway \
