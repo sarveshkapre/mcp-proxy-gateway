@@ -2,7 +2,7 @@ BINARY_NAME := mcp-proxy-gateway
 BIN_DIR := bin
 GOLANGCI_LINT := $(shell go env GOPATH)/bin/golangci-lint
 
-.PHONY: setup dev test lint typecheck build check release
+.PHONY: setup dev test lint typecheck build check smoke release
 
 setup:
 	go mod download
@@ -24,6 +24,9 @@ build:
 	go build -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
 
 check: lint typecheck test build
+
+smoke:
+	./scripts/smoke.sh
 
 release:
 	@echo "Release via git tag and GitHub Releases"

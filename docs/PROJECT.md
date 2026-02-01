@@ -9,6 +9,7 @@ make lint
 make typecheck
 make build
 make check
+make smoke
 make release
 ```
 

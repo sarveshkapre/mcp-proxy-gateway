@@ -56,6 +56,11 @@ tools:
 - `policy.example.yaml`
 - `records.example.ndjson`
 
+## Smoke test
+```bash
+make smoke
+```
+
 ## Docs
 See `docs/` for architecture, commands, and contribution details.
 
