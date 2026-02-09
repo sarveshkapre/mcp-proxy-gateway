@@ -10,7 +10,7 @@ Build a local-first MCP Proxy Gateway that sits between MCP clients and servers,
 - Deterministic replay mode without upstream dependency.
 
 ## Non-goals
-- Full MCP spec coverage (batch, streaming, SSE) in MVP.
+- Full MCP spec coverage (streaming, SSE) in MVP.
 - Authn/authz, multi-tenant routing, or persistence beyond flat files.
 - UI or dashboard.
 
@@ -19,10 +19,11 @@ Build a local-first MCP Proxy Gateway that sits between MCP clients and servers,
 - Security engineers who want gating/validation for tool calls.
 
 ## MVP scope
-- Single JSON-RPC request per HTTP POST (no batch).
+- Single and batch JSON-RPC request handling (batch processed sequentially).
 - `tools/call` validation with allow/deny lists and JSON Schema.
 - `tools/list` and other methods passthrough.
 - Record (append) and replay (map by request signature) modes.
+- JSON-RPC notification handling (`204` without response body when `id` is omitted).
 
 ## Architecture
 - `cmd/mcp-proxy-gateway`: CLI entrypoint
@@ -58,9 +59,9 @@ Build a local-first MCP Proxy Gateway that sits between MCP clients and servers,
 4. Dockerfile + docs polish + v0.1.0
 
 ## MVP checklist
-- [ ] CLI parses flags, starts HTTP server
-- [ ] JSON-RPC request validation
-- [ ] Schema validation for `tools/call`
-- [ ] Record/replay NDJSON support
-- [ ] Unit tests for validation and replay
-- [ ] `make check` passes locally
+- [x] CLI parses flags, starts HTTP server
+- [x] JSON-RPC request validation
+- [x] Schema validation for `tools/call`
+- [x] Record/replay NDJSON support
+- [x] Unit tests for validation and replay
+- [x] `make check` passes locally

@@ -9,6 +9,8 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Replays recorded calls without an upstream server
 - Health endpoint for status checks (`GET /healthz`)
 - Supports JSON-RPC batch requests (handled sequentially per item)
+- Implements JSON-RPC notification semantics (`204 No Content` when request omits `id`)
+- Rewrites replayed response IDs to the incoming request ID for correlation safety
 
 ## Quickstart
 ```bash

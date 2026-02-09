@@ -20,6 +20,6 @@ make release
 - Replay matching can be configured via `policy.replay.match` (`signature`, `method`, `tool`).
 
 ## Next 3 improvements
-1. Batch JSON-RPC support with per-request validation.
-2. Streaming/SSE proxy support.
-3. Configurable redaction for record files. ✅ (see `policy.record`)
+1. Streaming/SSE proxy support for long-running tool responses.
+2. Recorder file management (rotation/size cap) for long-lived local use.
+3. Request metrics endpoint (latency/error/replay-hit counters) for operability.
