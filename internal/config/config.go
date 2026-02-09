@@ -19,6 +19,7 @@ type Policy struct {
 	Tools       map[string]ToolEntry `json:"tools" yaml:"tools"`
 	Record      RecordPolicy         `json:"record" yaml:"record"`
 	Replay      ReplayPolicy         `json:"replay" yaml:"replay"`
+	HTTP        HTTPPolicy           `json:"http" yaml:"http"`
 }
 
 type RecordPolicy struct {
@@ -34,6 +35,13 @@ type RecordPolicy struct {
 
 type ReplayPolicy struct {
 	Match string `json:"match" yaml:"match"`
+}
+
+type HTTPPolicy struct {
+	// Optional list of allowed Origins for POST /rpc. If set, requests that include
+	// an Origin header not present in this list are rejected (403). Requests with
+	// no Origin header are allowed.
+	OriginAllowlist []string `json:"origin_allowlist" yaml:"origin_allowlist"`
 }
 
 type ToolEntry struct {

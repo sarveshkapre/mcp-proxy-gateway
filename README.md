@@ -7,6 +7,7 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Validates `tools/call` arguments with JSON Schema
 - Records requests/responses to NDJSON
 - Replays recorded calls without an upstream server
+- Streams upstream SSE responses when the client requests it (`Accept: text/event-stream`)
 - Health endpoint for status checks (`GET /healthz`)
 - Metrics endpoint for local runtime counters (`GET /metricsz`)
 - Supports JSON-RPC batch requests (handled sequentially per item)
@@ -51,6 +52,19 @@ replay:
   match: signature # signature (default), method, or tool
 ```
 
+## Streaming/SSE passthrough
+If an upstream tool response is long-running and the upstream server supports SSE, clients can request it with:
+```bash
+curl -sS -N -X POST http://localhost:8080/rpc \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello"}}}'
+```
+
+Notes:
+- The gateway streams the upstream response bytes as-is when the upstream responds with `Content-Type: text/event-stream`.
+- Streamed responses are not recorded (record/replay is JSON-only).
+
 ## Policy example
 ```yaml
 version: 1
@@ -58,6 +72,12 @@ mode: enforce
 allow_tools:
   - web.search
   - fs.read
+
+http:
+  # Optional CSRF-style hardening for browser-initiated requests: if a request
+  # includes an `Origin` header not in this list, it is rejected (403). Requests
+  # without an Origin header are allowed.
+  origin_allowlist: ["http://localhost:3000"]
 
 record:
   # Redaction is applied before writing NDJSON recordings.

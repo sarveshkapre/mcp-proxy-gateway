@@ -53,9 +53,11 @@ func main() {
 
 	recordPolicy := config.RecordPolicy{}
 	replayPolicy := config.ReplayPolicy{}
+	httpPolicy := config.HTTPPolicy{}
 	if policy != nil {
 		recordPolicy = policy.Record
 		replayPolicy = policy.Replay
+		httpPolicy = policy.HTTP
 	}
 
 	// Rotation config precedence: CLI (if not -1) overrides policy.
@@ -95,7 +97,7 @@ func main() {
 		logger.Fatalf("failed to load replay file: %v", err)
 	}
 
-	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, *maxBody, *timeout, logger)
+	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, httpPolicy.OriginAllowlist, *maxBody, *timeout, logger)
 
 	httpServer := &http.Server{
 		Addr:              *listen,

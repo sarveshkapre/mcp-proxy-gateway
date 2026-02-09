@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -21,15 +22,16 @@ import (
 var errUpstreamResponseTooLarge = errors.New("upstream response too large")
 
 type Server struct {
-	upstream     *url.URL
-	client       *http.Client
-	validator    *validate.Validator
-	recorder     *record.Recorder
-	replay       *record.ReplayStore
-	replayStrict bool
-	maxBody      int64
-	logger       *log.Logger
-	metrics      *proxyMetrics
+	upstream        *url.URL
+	client          *http.Client
+	validator       *validate.Validator
+	recorder        *record.Recorder
+	replay          *record.ReplayStore
+	replayStrict    bool
+	maxBody         int64
+	originAllowlist map[string]struct{}
+	logger          *log.Logger
+	metrics         *proxyMetrics
 }
 
 type proxyMetrics struct {
@@ -137,22 +139,35 @@ func (m *proxyMetrics) snapshot() map[string]any {
 	}
 }
 
-func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
+func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, originAllowlist []string, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
 	if maxBody <= 0 {
 		maxBody = 1 << 20
 	}
 	if logger == nil {
 		logger = log.Default()
 	}
+
+	var originAllow map[string]struct{}
+	for _, origin := range originAllowlist {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		if originAllow == nil {
+			originAllow = map[string]struct{}{}
+		}
+		originAllow[origin] = struct{}{}
+	}
 	return &Server{
-		upstream:     upstream,
-		validator:    validator,
-		recorder:     recorder,
-		replay:       replay,
-		replayStrict: replayStrict,
-		maxBody:      maxBody,
-		logger:       logger,
-		metrics:      newProxyMetrics(),
+		upstream:        upstream,
+		validator:       validator,
+		recorder:        recorder,
+		replay:          replay,
+		replayStrict:    replayStrict,
+		maxBody:         maxBody,
+		originAllowlist: originAllow,
+		logger:          logger,
+		metrics:         newProxyMetrics(),
 		client: &http.Client{
 			Timeout: timeout,
 		},
@@ -176,6 +191,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/rpc" {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && len(s.originAllowlist) > 0 {
+		if _, ok := s.originAllowlist[origin]; !ok {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
 	}
 	s.metrics.incRequests()
 
@@ -243,25 +264,72 @@ func withResponseID(rawResp, id json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(out), nil
 }
 
-func (s *Server) forward(ctx context.Context, body []byte) (json.RawMessage, int, error) {
+func wantsEventStream(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	accept := r.Header.Get("Accept")
+	return strings.Contains(strings.ToLower(accept), "text/event-stream")
+}
+
+func isEventStreamContentType(ct string) bool {
+	if ct == "" {
+		return false
+	}
+	ct = strings.ToLower(strings.TrimSpace(ct))
+	if idx := strings.Index(ct, ";"); idx >= 0 {
+		ct = strings.TrimSpace(ct[:idx])
+	}
+	return ct == "text/event-stream"
+}
+
+func (s *Server) doUpstream(ctx context.Context, in *http.Request, body []byte, includeAccept bool) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.upstream.String(), bytes.NewReader(body))
 	if err != nil {
-		return nil, http.StatusBadGateway, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, http.StatusBadGateway, err
+
+	// Only forward a small allowlist of headers to avoid becoming an implicit
+	// generic HTTP proxy. Add more on demand with explicit documentation.
+	if in != nil {
+		if v := in.Header.Get("Authorization"); v != "" {
+			req.Header.Set("Authorization", v)
+		}
+		if includeAccept {
+			if v := in.Header.Get("Accept"); v != "" {
+				req.Header.Set("Accept", v)
+			}
+		}
 	}
-	defer resp.Body.Close()
+
+	return s.client.Do(req)
+}
+
+func (s *Server) readUpstreamJSON(resp *http.Response) (json.RawMessage, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, errors.New("missing upstream response body")
+	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, s.maxBody+1))
 	if err != nil {
-		return nil, http.StatusBadGateway, err
+		return nil, err
 	}
 	if int64(len(respBody)) > s.maxBody {
-		return nil, http.StatusBadGateway, errUpstreamResponseTooLarge
+		return nil, errUpstreamResponseTooLarge
 	}
-	return json.RawMessage(respBody), resp.StatusCode, nil
+	return json.RawMessage(respBody), nil
+}
+
+type flushingResponseWriter struct {
+	w http.ResponseWriter
+}
+
+func (f flushingResponseWriter) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	if fl, ok := f.w.(http.Flusher); ok {
+		fl.Flush()
+	}
+	return n, err
 }
 
 func (s *Server) writeJSONRPCError(w http.ResponseWriter, id json.RawMessage, code int, message string, data any) {
@@ -406,7 +474,52 @@ func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 
-	upstreamResp, status, err := s.forward(r.Context(), body)
+	upstreamHTTPResp, err := s.doUpstream(r.Context(), r, body, wantsEventStream(r))
+	if err != nil {
+		s.metrics.incUpstreamError()
+		if notification {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream error", nil)
+		return
+	}
+	defer upstreamHTTPResp.Body.Close()
+
+	// If the upstream chooses SSE (or other streaming) we pass it through as-is.
+	if isEventStreamContentType(upstreamHTTPResp.Header.Get("Content-Type")) {
+		if notification {
+			// Notifications never return a response body.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		// Recording/replay of streamed responses is intentionally skipped.
+		ct := upstreamHTTPResp.Header.Get("Content-Type")
+		if ct == "" {
+			ct = "text/event-stream"
+		}
+		w.Header().Set("Content-Type", ct)
+		if v := upstreamHTTPResp.Header.Get("Cache-Control"); v != "" {
+			w.Header().Set("Cache-Control", v)
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		w.WriteHeader(upstreamHTTPResp.StatusCode)
+
+		n, copyErr := io.Copy(flushingResponseWriter{w: w}, io.LimitReader(upstreamHTTPResp.Body, s.maxBody+1))
+		if copyErr != nil {
+			s.metrics.incUpstreamError()
+			s.logger.Printf("upstream stream copy failed: %v", copyErr)
+		}
+		if n > s.maxBody {
+			s.metrics.incUpstreamError()
+			s.logger.Printf("upstream stream truncated at max-body=%d bytes", s.maxBody)
+		}
+		return
+	}
+
+	upstreamResp, err := s.readUpstreamJSON(upstreamHTTPResp)
+	status := upstreamHTTPResp.StatusCode
 	if err != nil {
 		s.metrics.incUpstreamError()
 		if notification {
@@ -550,7 +663,19 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, body []byte
 				return
 			}
 
-			upstreamResp, _, err := s.forward(r.Context(), itemTrimmed)
+			upstreamHTTPResp, err := s.doUpstream(r.Context(), r, itemTrimmed, false)
+			if err != nil {
+				s.metrics.incUpstreamError()
+				if len(req.ID) > 0 {
+					resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "upstream error", nil)
+					payload, _ := json.Marshal(resp)
+					responses = append(responses, json.RawMessage(payload))
+				}
+				return
+			}
+			defer upstreamHTTPResp.Body.Close()
+
+			upstreamResp, err := s.readUpstreamJSON(upstreamHTTPResp)
 			if err != nil {
 				s.metrics.incUpstreamError()
 				if len(req.ID) > 0 {

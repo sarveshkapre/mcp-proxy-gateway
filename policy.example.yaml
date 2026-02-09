@@ -4,6 +4,12 @@ allow_tools:
   - web.search
   - fs.read
 
+http:
+  # Optional CSRF-style hardening for browser-initiated requests.
+  # If set, requests that include an Origin header not present in this list are rejected (403).
+  # Requests with no Origin header are allowed.
+  origin_allowlist: ["http://localhost:3000"]
+
 record:
   # Redaction is applied before writing NDJSON recordings.
   # Use this to avoid accidentally persisting secrets in record files.

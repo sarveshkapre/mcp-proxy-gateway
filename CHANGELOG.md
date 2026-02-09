@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## Unreleased
+- Add SSE passthrough for long-running upstream responses when the upstream responds with `Content-Type: text/event-stream` (client requests with `Accept: text/event-stream`).
+- Add optional `policy.http.origin_allowlist` hardening to reject unexpected browser-originated requests (403 when an `Origin` header is present but not allowlisted).
+- Forward `Authorization` header to upstream requests (and forward `Accept` only for SSE requests).
 - Add `GET /metricsz` endpoint exposing runtime counters:
   - `requests_total`
   - `batch_items_total`
