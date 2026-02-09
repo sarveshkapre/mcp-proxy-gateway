@@ -1,5 +1,22 @@
 # PROJECT_MEMORY
 
+## Entry: 2026-02-09 - Upstream Header Forwarding Allowlist + Formatting Guardrails
+- Decision: Add explicit `policy.http.forward_headers` allowlist for upstream request header forwarding (keep narrow defaults; `Authorization` always forwarded, `Accept` only forwarded for SSE requests).
+- Why: Authenticated upstreams and tracing are common needs; making forwarding explicit reduces accidental secret propagation and prevents the gateway from becoming a generic HTTP proxy.
+- Evidence:
+  - Code: `internal/proxy/proxy.go`, `internal/config/config.go`, `cmd/mcp-proxy-gateway/main.go`
+  - Tests: `internal/proxy/headers_test.go`, existing SSE header tests in `internal/proxy/stream_test.go`
+  - Docs/examples: `README.md`, `policy.example.yaml`, `docs/PROJECT.md`, `CHANGELOG.md`, `UPDATE.md`
+  - Verification:
+    - `make check` (pass)
+    - `make smoke` (pass)
+- Commit: `e3e2817`
+- Confidence: high
+- Trust label: verified-local
+- Follow-ups:
+  - Add integration tests covering streaming + replay/strict and batch interactions (explicitly document unsupported combos).
+  - Consider whether a future Streamable HTTP/session feature should have its own header-forwarding semantics (separate from JSON-RPC proxying).
+
 ## Entry: 2026-02-09 - SSE Passthrough + Origin Allowlist Hardening
 - Decision: Support long-running upstream tool responses via SSE passthrough (stream when upstream responds `text/event-stream`), and add opt-in `policy.http.origin_allowlist` request hardening.
 - Why: Streaming is now table-stakes for MCP gateways; origin allowlisting reduces CSRF-style browser risk when the gateway is bound beyond localhost.

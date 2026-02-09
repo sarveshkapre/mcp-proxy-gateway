@@ -7,18 +7,22 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] BACKLOG P1: Expand upstream request header forwarding allowlist (beyond current minimal `Authorization` passthrough; add `Accept`, `Traceparent`, etc) with explicit docs to avoid accidental secret propagation.
-  Scoring: impact=high effort=low fit=high diff=parity risk=med confidence=med
 - [ ] BACKLOG P2: Add integration tests for streaming + replay/strict interactions and batch behavior (explicitly document unsupported combos).
   Scoring: impact=med effort=med fit=med diff=parity risk=med confidence=med
 - [ ] BACKLOG P2: Add benchmark coverage for proxy batch throughput (handler-level) and replay lookup hot paths (beyond micro-benchmarks).
-  Scoring: impact=low effort=med fit=med diff=parity risk=low confidence=med
+  Scoring: impact=low effort=med fit=med diff=quality risk=low confidence=med
 - [ ] BACKLOG P3: Add Prometheus exposition format (`/metrics`) behind a flag/policy while keeping `/metricsz` JSON as the local-first default.
   Scoring: impact=low effort=med fit=med diff=nice risk=low confidence=med
 - [ ] BACKLOG P3: Extend streaming support beyond SSE passthrough (Streamable HTTP/session semantics) while preserving local-first defaults.
   Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
 
 ## Implemented
+- [x] 2026-02-09: Policy-driven upstream header forwarding allowlist via `policy.http.forward_headers` (keeps narrow defaults to avoid becoming a generic HTTP proxy).
+  Evidence: `internal/proxy/proxy.go` (allowlist copy), `internal/config/config.go` (policy field + validation), `internal/proxy/headers_test.go` (regression), `README.md` + `policy.example.yaml` (docs/examples).
+- [x] 2026-02-09: Formatting guardrails added (`make fmt`, `make fmtcheck`) and `fmtcheck` enforced by `make check` (CI).
+  Evidence: `Makefile`, `docs/PROJECT.md`, `CHANGELOG.md`.
+- [x] 2026-02-09: Changelog hygiene: cut v0.2.0 (2026-02-09) entry and reset “Unreleased”.
+  Evidence: `CHANGELOG.md`, `UPDATE.md`.
 - [x] 2026-02-09: P0 SSE passthrough for long-running upstream responses when the upstream responds with `Content-Type: text/event-stream` (client requests with `Accept: text/event-stream`).
   Evidence: `internal/proxy/proxy.go` (SSE detection + streaming copy), `internal/proxy/stream_test.go` (SSE passthrough + skip record), `README.md` (usage notes).
 - [x] 2026-02-09: P1 optional `policy.http.origin_allowlist` to reject unexpected browser-originated requests (403 when an `Origin` header is present but not allowlisted).
@@ -56,6 +60,7 @@
 - Recorder rotation defaults are intentionally conservative: rotation is off unless `max_bytes` (or `--record-max-bytes`) is set, and backups are retained unless explicitly configured to `0`.
 - Streamed SSE responses are passed through as bytes and are not recorded/replayed (record/replay is JSON-only).
 - `Origin` allowlisting is intentionally opt-in and only affects requests that include an `Origin` header; non-browser clients typically do not send one.
+- Upstream header forwarding is intentionally explicit: `Authorization` is forwarded; additional headers require `policy.http.forward_headers` to avoid accidental secret propagation.
 - `docs/PLAN.md` checklist had drifted out of sync with implementation; keeping this updated prevents false-positive backlog detection in automation loops.
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
 - Market scan (2026-02-09, untrusted): MCP gateways commonly emphasize Streamable HTTP/SSE support and session management for web clients, plus optional auth/rate limiting/observability when exposed beyond localhost.
