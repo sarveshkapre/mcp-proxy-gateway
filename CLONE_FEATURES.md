@@ -60,6 +60,7 @@
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
 - Market scan (2026-02-09, untrusted): MCP gateways commonly emphasize Streamable HTTP/SSE support and session management for web clients, plus optional auth/rate limiting/observability when exposed beyond localhost.
   Sources: https://github.com/atrawog/mcp-streamablehttp-proxy, https://github.com/sigbit/mcp-auth-proxy, https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway, https://github.com/docker/mcp-gateway, https://github.com/lasso-security/mcp-gateway, https://github.com/Kuadrant/mcp-gateway.
+- Gap map (2026-02-09): Missing: Streamable HTTP/session semantics beyond SSE passthrough; Weak: explicit upstream header-forwarding policy/docs; Parity: SSE passthrough + opt-in Origin allowlist; Differentiator: schema gating + record/replay for deterministic tests.
 
 ## Notes
 - This file is maintained by the autonomous clone loop.
