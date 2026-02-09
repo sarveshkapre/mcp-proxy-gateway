@@ -13,7 +13,7 @@ Local-first HTTP JSON-RPC gateway for MCP that validates and gates `tools/call`,
 ## Top risks / unknowns
 - Replay signature stability vs. JSON canonicalization differences.
 - Recordings can accidentally capture secrets if redaction policy is not configured.
-- Streaming/SSE transport still unsupported for long-running responses.
+- Streamable HTTP/session semantics beyond SSE passthrough are still unsupported.
 
 ## Commands
 See `docs/PROJECT.md` for the full list. Common ones:

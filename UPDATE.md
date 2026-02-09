@@ -26,8 +26,10 @@
 - Add `GET /metricsz` endpoint with runtime counters for requests, replay hits/misses, validation rejects, upstream errors, and latency buckets.
 - Add proxy regression tests for metrics endpoint shape and counter behavior.
 - Extend smoke test to verify metrics endpoint returns expected fields.
+- Add explicit `policy.http.forward_headers` allowlist for upstream request header forwarding (beyond the minimal defaults).
+- Add formatting guardrails: `make fmt` and `make fmtcheck` (and include `fmtcheck` in `make check`).
 
 ## Next
-- Streaming/SSE proxy support.
-- Recorder file rotation or max-size safeguards.
-- Replay-mode integration tests across all match strategies.
+- Streamable HTTP/session semantics beyond SSE passthrough (web-client parity).
+- Replay-mode integration tests across all match strategies (and streaming interactions).
+- Optional Prometheus exposition format for metrics (keep `/metricsz` JSON as the local-first default).

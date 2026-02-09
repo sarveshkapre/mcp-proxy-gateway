@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,12 @@ type HTTPPolicy struct {
 	// an Origin header not present in this list are rejected (403). Requests with
 	// no Origin header are allowed.
 	OriginAllowlist []string `json:"origin_allowlist" yaml:"origin_allowlist"`
+
+	// Optional explicit allowlist of headers to forward to the upstream request.
+	// This is intentionally narrow to avoid turning the gateway into a generic
+	// HTTP proxy. "Authorization" is forwarded regardless of this list (to support
+	// authenticated upstreams) and "Accept" is forwarded only for SSE requests.
+	ForwardHeaders []string `json:"forward_headers" yaml:"forward_headers"`
 }
 
 type ToolEntry struct {
@@ -99,5 +106,31 @@ func LoadPolicy(path string) (*Policy, error) {
 	if policy.Record.MaxFiles != nil && *policy.Record.MaxFiles < 0 {
 		return nil, errors.New("record.max_files must be >= 0")
 	}
+
+	// Validate configured header names early to avoid silently ignoring typos.
+	for _, h := range policy.HTTP.ForwardHeaders {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		if !isValidHeaderName(h) {
+			return nil, fmt.Errorf("http.forward_headers contains an invalid header name: %q", h)
+		}
+	}
 	return policy, nil
+}
+
+func isValidHeaderName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	// RFC 7230 token-ish: keep it simple and conservative.
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }

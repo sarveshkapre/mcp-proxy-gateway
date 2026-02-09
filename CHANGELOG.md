@@ -1,8 +1,12 @@
 # CHANGELOG
 
 ## Unreleased
+- (none yet)
+
+## 0.2.0 - 2026-02-09
 - Add SSE passthrough for long-running upstream responses when the upstream responds with `Content-Type: text/event-stream` (client requests with `Accept: text/event-stream`).
 - Add optional `policy.http.origin_allowlist` hardening to reject unexpected browser-originated requests (403 when an `Origin` header is present but not allowlisted).
+- Add explicit `policy.http.forward_headers` allowlist for upstream request header forwarding (beyond the minimal defaults).
 - Forward `Authorization` header to upstream requests (and forward `Accept` only for SSE requests).
 - Add `GET /metricsz` endpoint exposing runtime counters:
   - `requests_total`
@@ -29,6 +33,7 @@
 - Add JSON-RPC batch support (sequential per-item processing).
 - Add replay match modes (`signature`, `method`, `tool`) via `policy.replay.match`.
 - Make smoke test wait for server readiness.
+- Add gofmt guardrails: `make fmt` and `make fmtcheck`, and include `fmtcheck` in `make check`.
 
 ## 0.1.0 - 2026-02-01
 - Initial scaffold.

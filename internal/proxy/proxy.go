@@ -30,6 +30,7 @@ type Server struct {
 	replayStrict    bool
 	maxBody         int64
 	originAllowlist map[string]struct{}
+	forwardHeaders  map[string]struct{}
 	logger          *log.Logger
 	metrics         *proxyMetrics
 }
@@ -139,7 +140,7 @@ func (m *proxyMetrics) snapshot() map[string]any {
 	}
 }
 
-func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, originAllowlist []string, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
+func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, originAllowlist []string, forwardHeaders []string, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
 	if maxBody <= 0 {
 		maxBody = 1 << 20
 	}
@@ -158,6 +159,27 @@ func NewServer(upstream *url.URL, validator *validate.Validator, recorder *recor
 		}
 		originAllow[origin] = struct{}{}
 	}
+
+	var forwardAllow map[string]struct{}
+	for _, h := range forwardHeaders {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		canon := http.CanonicalHeaderKey(h)
+		switch strings.ToLower(canon) {
+		case "authorization", "accept":
+			// Authorization is always forwarded; Accept is forwarded only for SSE requests.
+			continue
+		case "connection", "proxy-connection", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer", "proxy-authenticate", "proxy-authorization", "host", "content-length", "content-type":
+			// Hop-by-hop and transport-level headers are not forwarded.
+			continue
+		}
+		if forwardAllow == nil {
+			forwardAllow = map[string]struct{}{}
+		}
+		forwardAllow[canon] = struct{}{}
+	}
 	return &Server{
 		upstream:        upstream,
 		validator:       validator,
@@ -166,6 +188,7 @@ func NewServer(upstream *url.URL, validator *validate.Validator, recorder *recor
 		replayStrict:    replayStrict,
 		maxBody:         maxBody,
 		originAllowlist: originAllow,
+		forwardHeaders:  forwardAllow,
 		logger:          logger,
 		metrics:         newProxyMetrics(),
 		client: &http.Client{
@@ -291,19 +314,33 @@ func (s *Server) doUpstream(ctx context.Context, in *http.Request, body []byte, 
 	req.Header.Set("Content-Type", "application/json")
 
 	// Only forward a small allowlist of headers to avoid becoming an implicit
-	// generic HTTP proxy. Add more on demand with explicit documentation.
+	// generic HTTP proxy. Additional headers must be explicitly allowlisted in
+	// policy (`policy.http.forward_headers`).
 	if in != nil {
-		if v := in.Header.Get("Authorization"); v != "" {
-			req.Header.Set("Authorization", v)
+		s.copyHeaderAllowlisted(req, in, "Authorization")
+		for h := range s.forwardHeaders {
+			s.copyHeaderAllowlisted(req, in, h)
 		}
 		if includeAccept {
-			if v := in.Header.Get("Accept"); v != "" {
-				req.Header.Set("Accept", v)
-			}
+			s.copyHeaderAllowlisted(req, in, "Accept")
 		}
 	}
 
 	return s.client.Do(req)
+}
+
+func (s *Server) copyHeaderAllowlisted(dst *http.Request, src *http.Request, key string) {
+	if dst == nil || src == nil || key == "" {
+		return
+	}
+	vals := src.Header.Values(key)
+	if len(vals) == 0 {
+		return
+	}
+	dst.Header.Del(key)
+	for _, v := range vals {
+		dst.Header.Add(key, v)
+	}
 }
 
 func (s *Server) readUpstreamJSON(resp *http.Response) (json.RawMessage, error) {

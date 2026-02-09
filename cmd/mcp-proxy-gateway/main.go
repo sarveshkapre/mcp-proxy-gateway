@@ -97,7 +97,7 @@ func main() {
 		logger.Fatalf("failed to load replay file: %v", err)
 	}
 
-	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, httpPolicy.OriginAllowlist, *maxBody, *timeout, logger)
+	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, httpPolicy.OriginAllowlist, httpPolicy.ForwardHeaders, *maxBody, *timeout, logger)
 
 	httpServer := &http.Server{
 		Addr:              *listen,

@@ -79,6 +79,12 @@ http:
   # includes an `Origin` header not in this list, it is rejected (403). Requests
   # without an Origin header are allowed.
   origin_allowlist: ["http://localhost:3000"]
+  # Optional explicit allowlist of headers to forward upstream. This is
+  # intentionally narrow to avoid becoming a generic HTTP proxy.
+  # Notes:
+  # - `Authorization` is forwarded regardless to support authenticated upstreams.
+  # - `Accept` is forwarded only for SSE requests (`Accept: text/event-stream`).
+  forward_headers: ["Traceparent", "Tracestate", "Baggage", "X-Request-Id"]
 
 record:
   # Redaction is applied before writing NDJSON recordings.
@@ -104,6 +110,11 @@ tools:
       required: [query]
       additionalProperties: false
 ```
+
+## Upstream header forwarding
+- The gateway forwards `Authorization` to the upstream request if present.
+- For additional headers (for example distributed tracing), configure `policy.http.forward_headers`.
+- The gateway intentionally does not forward transport/hop-by-hop headers (for example `Host`, `Connection`, `Content-Length`).
 
 ## Example files
 - `policy.example.yaml`

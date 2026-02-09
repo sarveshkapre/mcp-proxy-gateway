@@ -9,6 +9,12 @@ http:
   # If set, requests that include an Origin header not present in this list are rejected (403).
   # Requests with no Origin header are allowed.
   origin_allowlist: ["http://localhost:3000"]
+  # Optional explicit allowlist of headers to forward to the upstream request.
+  # Notes:
+  # - `Authorization` is forwarded regardless to support authenticated upstreams.
+  # - `Accept` is forwarded only for SSE requests (`Accept: text/event-stream`).
+  # - Avoid adding secret-bearing headers unless you intend to propagate them.
+  forward_headers: ["Traceparent", "Tracestate", "Baggage", "X-Request-Id"]
 
 record:
   # Redaction is applied before writing NDJSON recordings.

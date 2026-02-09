@@ -11,7 +11,7 @@ import (
 func TestOriginAllowlistRejectsUnexpectedOrigin(t *testing.T) {
 	t.Parallel()
 
-	srv := NewServer(nil, nil, nil, nil, false, []string{"http://allowed.local"}, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, []string{"http://allowed.local"}, nil, 1024, time.Second, nil)
 
 	reqBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(reqBody))
@@ -28,7 +28,7 @@ func TestOriginAllowlistRejectsUnexpectedOrigin(t *testing.T) {
 func TestOriginAllowlistAllowsConfiguredOrigin(t *testing.T) {
 	t.Parallel()
 
-	srv := NewServer(nil, nil, nil, nil, false, []string{"http://allowed.local"}, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, []string{"http://allowed.local"}, nil, 1024, time.Second, nil)
 
 	reqBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(reqBody))
