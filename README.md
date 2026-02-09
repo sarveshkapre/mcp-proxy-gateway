@@ -64,6 +64,7 @@ curl -sS -N -X POST http://localhost:8080/rpc \
 Notes:
 - The gateway streams the upstream response bytes as-is when the upstream responds with `Content-Type: text/event-stream`.
 - Streamed responses are not recorded (record/replay is JSON-only).
+- Streamed responses are still subject to `--max-body` (raise it for longer streams).
 
 ## Policy example
 ```yaml
