@@ -22,6 +22,6 @@ make release
 - Replay matching can be configured via `policy.replay.match` (`signature`, `method`, `tool`).
 
 ## Next 3 improvements
-1. Streaming/SSE proxy support for long-running tool responses.
-2. Recorder file management (rotation/size cap) for long-lived local use.
-3. Integration tests for replay match modes (`signature`/`method`/`tool`) with notification edge cases.
+1. Documented upstream header-forwarding allowlist (beyond the current minimal passthrough) to support authenticated upstreams without becoming a generic HTTP proxy.
+2. Optional `Origin` allowlist and related hardening docs for cases where the gateway is exposed beyond localhost.
+3. Prometheus exposition format for metrics (keep `/metricsz` JSON as the local-first default).

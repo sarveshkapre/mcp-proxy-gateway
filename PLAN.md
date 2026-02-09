@@ -31,4 +31,4 @@ make build
 ## Next to ship
 - Add lightweight metrics endpoint for runtime counters. ✅ (`GET /metricsz`)
 - Add recorder rotation/retention controls (max size and optional rollover). ✅ (`policy.record.max_bytes` / `policy.record.max_files`)
-- Add streaming/SSE passthrough support for long-running MCP tool responses.
+- Add streaming/SSE passthrough support for long-running MCP tool responses. ✅ (SSE passthrough when upstream responds `text/event-stream`)

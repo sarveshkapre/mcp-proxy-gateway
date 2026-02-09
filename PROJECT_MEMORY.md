@@ -1,5 +1,22 @@
 # PROJECT_MEMORY
 
+## Entry: 2026-02-09 - SSE Passthrough + Origin Allowlist Hardening
+- Decision: Support long-running upstream tool responses via SSE passthrough (stream when upstream responds `text/event-stream`), and add opt-in `policy.http.origin_allowlist` request hardening.
+- Why: Streaming is now table-stakes for MCP gateways; origin allowlisting reduces CSRF-style browser risk when the gateway is bound beyond localhost.
+- Evidence:
+  - Code: `internal/proxy/proxy.go`, `internal/config/config.go`, `cmd/mcp-proxy-gateway/main.go`
+  - Tests: `internal/proxy/stream_test.go`, `internal/proxy/origin_test.go`, `internal/proxy/proxy_test.go`
+  - Docs/examples: `README.md`, `policy.example.yaml`, `CHANGELOG.md`, `PLAN.md`
+  - Verification:
+    - `make check` (pass)
+    - `make smoke` (pass; includes upstream stub + origin rejection + SSE passthrough)
+- Commit: `be511eb` (feature); follow-up commit updates smoke + trackers
+- Confidence: high
+- Trust label: verified-local
+- Follow-ups:
+  - Expand the upstream header-forwarding allowlist (currently minimal) with explicit docs.
+  - Decide on a safe stance for recording/replaying streaming responses (likely keep JSON-only).
+
 ## Entry: 2026-02-09 - Runtime Metrics Endpoint
 - Decision: Add a lightweight `GET /metricsz` endpoint backed by in-process atomic counters inside `internal/proxy`.
 - Why: Operators needed direct visibility into request volume, replay effectiveness, validation rejects, upstream failures, and latency distribution without external dependencies.

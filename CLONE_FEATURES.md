@@ -7,11 +7,24 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] BACKLOG P1: Add streaming/SSE passthrough mode to support long-running MCP tool responses.
-- [ ] BACKLOG P1: Security hardening for local HTTP exposure: optional `Origin` allowlist / CSRF-style request mitigation for browser-initiated requests (reject unexpected `Origin` headers by default when configured).
-- [ ] BACKLOG P2: Add benchmark coverage for batch throughput and replay lookup hot paths (beyond micro-benchmarks).
+- [ ] BACKLOG P1: Expand upstream request header forwarding allowlist (beyond current minimal `Authorization` passthrough; add `Accept`, `Traceparent`, etc) with explicit docs to avoid accidental secret propagation.
+  Scoring: impact=high effort=low fit=high diff=parity risk=med confidence=med
+- [ ] BACKLOG P2: Add integration tests for streaming + replay/strict interactions and batch behavior (explicitly document unsupported combos).
+  Scoring: impact=med effort=med fit=med diff=parity risk=med confidence=med
+- [ ] BACKLOG P2: Add benchmark coverage for proxy batch throughput (handler-level) and replay lookup hot paths (beyond micro-benchmarks).
+  Scoring: impact=low effort=med fit=med diff=parity risk=low confidence=med
+- [ ] BACKLOG P3: Add Prometheus exposition format (`/metrics`) behind a flag/policy while keeping `/metricsz` JSON as the local-first default.
+  Scoring: impact=low effort=med fit=med diff=nice risk=low confidence=med
+- [ ] BACKLOG P3: Extend streaming support beyond SSE passthrough (Streamable HTTP/session semantics) while preserving local-first defaults.
+  Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
 
 ## Implemented
+- [x] 2026-02-09: P0 SSE passthrough for long-running upstream responses when the upstream responds with `Content-Type: text/event-stream` (client requests with `Accept: text/event-stream`).
+  Evidence: `internal/proxy/proxy.go` (SSE detection + streaming copy), `internal/proxy/stream_test.go` (SSE passthrough + skip record), `README.md` (usage notes).
+- [x] 2026-02-09: P1 optional `policy.http.origin_allowlist` to reject unexpected browser-originated requests (403 when an `Origin` header is present but not allowlisted).
+  Evidence: `internal/config/config.go` (policy struct), `cmd/mcp-proxy-gateway/main.go` (plumbing), `internal/proxy/proxy.go` (enforcement), `internal/proxy/origin_test.go` (unit tests), `policy.example.yaml` + `README.md` (docs/examples).
+- [x] 2026-02-09: P2 smoke coverage expanded to include a real upstream stub (non-replay), origin allowlist rejection, and SSE passthrough verification.
+  Evidence: `scripts/smoke.sh`.
 - [x] 2026-02-09: P0 recorder rotation/retention controls for NDJSON recordings (max-bytes + max-files backups), with policy + CLI configuration.
   Evidence: `cmd/mcp-proxy-gateway/main.go` (CLI overrides), `internal/config/config.go` (policy fields + validation), `internal/record/record.go` (rotation), `internal/record/record_test.go` (rotation tests), `README.md` + `policy.example.yaml` (docs/examples).
 - [x] 2026-02-09: P1 proxy-layer regression coverage for replay match modes (`method`/`tool`), including notification edge cases and ID remapping.
@@ -41,10 +54,12 @@
 - JSON-RPC notification handling was already correct in batch mode but inconsistent in single mode; aligning both paths removed a client-visible protocol mismatch.
 - Replay signatures intentionally ignore request IDs, so remapping replayed response IDs is required for safe client correlation.
 - Recorder rotation defaults are intentionally conservative: rotation is off unless `max_bytes` (or `--record-max-bytes`) is set, and backups are retained unless explicitly configured to `0`.
+- Streamed SSE responses are passed through as bytes and are not recorded/replayed (record/replay is JSON-only).
+- `Origin` allowlisting is intentionally opt-in and only affects requests that include an `Origin` header; non-browser clients typically do not send one.
 - `docs/PLAN.md` checklist had drifted out of sync with implementation; keeping this updated prevents false-positive backlog detection in automation loops.
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
 - Market scan (2026-02-09, untrusted): MCP gateways commonly emphasize Streamable HTTP/SSE support and session management for web clients, plus optional auth/rate limiting/observability when exposed beyond localhost.
-  Sources: https://github.com/atrawog/mcp-streamablehttp-proxy, https://github.com/sigbit/mcp-auth-proxy, https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway.
+  Sources: https://github.com/atrawog/mcp-streamablehttp-proxy, https://github.com/sigbit/mcp-auth-proxy, https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway, https://github.com/docker/mcp-gateway, https://github.com/lasso-security/mcp-gateway, https://github.com/Kuadrant/mcp-gateway.
 
 ## Notes
 - This file is maintained by the autonomous clone loop.
