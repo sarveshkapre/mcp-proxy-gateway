@@ -7,15 +7,18 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] SESSION P0: Recorder rotation/retention controls for NDJSON recordings (max-bytes + max-files backups) to prevent unbounded growth.
-- [ ] SESSION P0: Track root `AGENTS.md` contract in git (currently only `docs/AGENTS.md` is tracked).
-- [ ] SESSION P1: Integration tests: replay match modes (`signature`, `method`, `tool`) at proxy layer, including notification edge cases and ID remapping.
-- [ ] SESSION P2: Docs: update `README.md` + `policy.example.yaml` with recorder rotation/retention config and recommended defaults.
-- [ ] SESSION P2: Add replay lookup micro-benchmarks (signature/method/tool) to catch regressions in hot paths.
 - [ ] BACKLOG P1: Add streaming/SSE passthrough mode to support long-running MCP tool responses.
 - [ ] BACKLOG P2: Add benchmark coverage for batch throughput and replay lookup hot paths (beyond micro-benchmarks).
 
 ## Implemented
+- [x] 2026-02-09: P0 recorder rotation/retention controls for NDJSON recordings (max-bytes + max-files backups), with policy + CLI configuration.
+  Evidence: `cmd/mcp-proxy-gateway/main.go` (CLI overrides), `internal/config/config.go` (policy fields + validation), `internal/record/record.go` (rotation), `internal/record/record_test.go` (rotation tests), `README.md` + `policy.example.yaml` (docs/examples).
+- [x] 2026-02-09: P1 proxy-layer regression coverage for replay match modes (`method`/`tool`), including notification edge cases and ID remapping.
+  Evidence: `internal/proxy/proxy_test.go` (`TestReplayMatchByMethodAtProxyLayerRemapsID`, `TestReplayMatchByToolAtProxyLayerRemapsID`, `TestReplayMatchByMethodNotificationReturns204`).
+- [x] 2026-02-09: P2 replay lookup micro-benchmarks (signature/method/tool).
+  Evidence: `internal/record/replay_benchmark_test.go`.
+- [x] 2026-02-09: P0 track root `AGENTS.md` contract in git.
+  Evidence: `AGENTS.md`.
 - [x] 2026-02-09: P0 replay ID remapping implemented for replay hits in single and batch flows.
   Evidence: `internal/proxy/proxy.go` (`withResponseID`, replay branches in `handleSingle` and `handleBatch`), `internal/proxy/proxy_test.go` (`TestSingleReplayResponseIDIsRewritten`, `TestBatchReplayResponseIDIsRewritten`).
 - [x] 2026-02-09: P0 single-request notification semantics enforced (`204 No Content` when `id` omitted).
@@ -36,6 +39,7 @@
 ## Insights
 - JSON-RPC notification handling was already correct in batch mode but inconsistent in single mode; aligning both paths removed a client-visible protocol mismatch.
 - Replay signatures intentionally ignore request IDs, so remapping replayed response IDs is required for safe client correlation.
+- Recorder rotation defaults are intentionally conservative: rotation is off unless `max_bytes` (or `--record-max-bytes`) is set, and backups are retained unless explicitly configured to `0`.
 - `docs/PLAN.md` checklist had drifted out of sync with implementation; keeping this updated prevents false-positive backlog detection in automation loops.
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
 

@@ -12,3 +12,28 @@
 - Follow-ups:
   - Add recorder retention/rotation metrics once file lifecycle controls are implemented.
   - Consider Prometheus exposition format if deployment scope expands beyond local-first workflows.
+
+## Entry: 2026-02-09 - Recorder Rotation/Retention Controls
+- Decision: Add optional NDJSON recorder rotation/retention (`record.max_bytes` + `record.max_files`) with CLI overrides (`--record-max-bytes`, `--record-max-files`).
+- Why: Long-lived local gateways can otherwise grow recordings without bound; rotation makes the default record path safe for repeated usage.
+- Evidence:
+  - Code: `internal/record/record.go`, `internal/config/config.go`, `cmd/mcp-proxy-gateway/main.go`
+  - Tests: `internal/record/record_test.go`, `internal/proxy/proxy_test.go`
+  - Docs/examples: `README.md`, `policy.example.yaml`, `CHANGELOG.md`, `PLAN.md`, `docs/PROJECT.md`
+  - Verification:
+    - `make check` (pass)
+    - `make smoke` (pass)
+- Commit: `a4fc153d20483e0e37f6b87ef5f7f96f47a4f9b2`
+- Confidence: high
+- Trust label: verified-local
+- Follow-ups:
+  - Consider adding a small smoke-path for recording with a stub upstream to exercise rotation end-to-end (optional).
+
+## Entry: 2026-02-09 - Track Root AGENTS.md Contract
+- Decision: Check in the repo-level `AGENTS.md` contract file (previously only `docs/AGENTS.md` was tracked).
+- Why: Automation and maintenance loops expect a stable top-level contract; keeping it versioned prevents drift.
+- Evidence:
+  - Code: `AGENTS.md`
+- Commit: `9a7273a65d19812b180708576e8d85e891ce6c11`
+- Confidence: high
+- Trust label: verified-local
