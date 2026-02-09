@@ -1,6 +1,15 @@
 # CHANGELOG
 
 ## Unreleased
+- Add `GET /metricsz` endpoint exposing runtime counters:
+  - `requests_total`
+  - `batch_items_total`
+  - `replay_hits_total` / `replay_misses_total`
+  - `validation_rejects_total`
+  - `upstream_errors_total`
+  - `latency_buckets_ms`
+- Add proxy metrics accounting hooks for single + batch paths and regression tests.
+- Extend smoke script to verify metrics endpoint availability and non-zero request count.
 - Upgrade CodeQL GitHub Action from `v3` to `v4` to avoid announced deprecation.
 - Enforce JSON-RPC notification semantics for single requests (`204 No Content` when `id` is omitted).
 - Rewrite replayed JSON-RPC response IDs to match incoming request IDs (single + batch).

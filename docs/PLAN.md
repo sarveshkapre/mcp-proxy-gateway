@@ -24,6 +24,7 @@ Build a local-first MCP Proxy Gateway that sits between MCP clients and servers,
 - `tools/list` and other methods passthrough.
 - Record (append) and replay (map by request signature) modes.
 - JSON-RPC notification handling (`204` without response body when `id` is omitted).
+- Lightweight metrics endpoint (`GET /metricsz`) for request, replay, validation, upstream-error, and latency counters.
 
 ## Architecture
 - `cmd/mcp-proxy-gateway`: CLI entrypoint

@@ -23,8 +23,11 @@
 - Extend smoke test to assert notification path returns `204` with an empty body.
 - Refresh stale docs checklist state in `docs/PLAN.md`.
 - Upgrade `.github/workflows/codeql.yml` to `github/codeql-action@v4` after CI deprecation annotation on `v3`.
+- Add `GET /metricsz` endpoint with runtime counters for requests, replay hits/misses, validation rejects, upstream errors, and latency buckets.
+- Add proxy regression tests for metrics endpoint shape and counter behavior.
+- Extend smoke test to verify metrics endpoint returns expected fields.
 
 ## Next
 - Streaming/SSE proxy support.
 - Recorder file rotation or max-size safeguards.
-- Lightweight request metrics endpoint.
+- Replay-mode integration tests across all match strategies.

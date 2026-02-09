@@ -7,6 +7,6 @@
 - Dockerfile + CI
 
 ## v0.2.0
-- Batch JSON-RPC
+- Recorder rotation/retention controls
 - Streaming/SSE support
-- Record redaction rules
+- Replay match-mode integration tests
