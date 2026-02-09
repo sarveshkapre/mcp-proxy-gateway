@@ -10,7 +10,7 @@
   - Verification:
     - `make check` (pass)
     - `make smoke` (pass; includes upstream stub + origin rejection + SSE passthrough)
-- Commit: `be511eb` (feature); follow-up commit updates smoke + trackers
+- Commit: `be511eb` (feature) + `f9a97f4` (smoke + trackers)
 - Confidence: high
 - Trust label: verified-local
 - Follow-ups:
