@@ -1,6 +1,7 @@
 # CHANGELOG
 
 ## Unreleased
+- Upgrade CodeQL GitHub Action from `v3` to `v4` to avoid announced deprecation.
 - Enforce JSON-RPC notification semantics for single requests (`204 No Content` when `id` is omitted).
 - Rewrite replayed JSON-RPC response IDs to match incoming request IDs (single + batch).
 - Add regression tests for replay ID remapping and single-notification behavior.

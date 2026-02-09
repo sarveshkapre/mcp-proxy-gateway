@@ -22,6 +22,8 @@
   Evidence: `internal/proxy/proxy_test.go` (new notification/replay regression tests), `scripts/smoke.sh` (notification request asserts `204` + empty body).
 - [x] 2026-02-09: P2 stale planning/docs state refreshed to match shipped behavior.
   Evidence: `docs/PLAN.md`, `docs/PROJECT.md`, `README.md`, `CHANGELOG.md`, `UPDATE.md`.
+- [x] 2026-02-09: P2 CI maintenance hardening by upgrading CodeQL action to supported major version.
+  Evidence: `.github/workflows/codeql.yml` (`github/codeql-action/init@v4`, `github/codeql-action/analyze@v4`).
 
 ## Insights
 - JSON-RPC notification handling was already correct in batch mode but inconsistent in single mode; aligning both paths removed a client-visible protocol mismatch.

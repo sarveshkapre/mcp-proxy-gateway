@@ -22,6 +22,7 @@
   - replay response ID remapping (single and batch)
 - Extend smoke test to assert notification path returns `204` with an empty body.
 - Refresh stale docs checklist state in `docs/PLAN.md`.
+- Upgrade `.github/workflows/codeql.yml` to `github/codeql-action@v4` after CI deprecation annotation on `v3`.
 
 ## Next
 - Streaming/SSE proxy support.
