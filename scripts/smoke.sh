@@ -5,6 +5,7 @@ PORT=8099
 REPLAY_FILE="./records.example.ndjson"
 
 REQUEST='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}}'
+NOTIFICATION='{"jsonrpc":"2.0","method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}}'
 
 cleanup() {
   if [ -n "${SERVER_PID:-}" ]; then
@@ -42,6 +43,15 @@ response=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/r
 
 echo "$response" | grep -q '"jsonrpc"' 
 echo "$response" | grep -q '"Example"'
+
+notif_body="/tmp/mcp-proxy-gateway-smoke-notification-body.txt"
+notif_status=$(printf "%s" "$NOTIFICATION" | curl -sS -X POST "http://localhost:${PORT}/rpc" \
+  -H 'Content-Type: application/json' \
+  -d @- \
+  -o "$notif_body" \
+  -w '%{http_code}')
+[ "$notif_status" = "204" ]
+[ ! -s "$notif_body" ]
 
 health=$(curl -sS "http://localhost:${PORT}/healthz")
 echo "$health" | grep -q '"ok":true'
