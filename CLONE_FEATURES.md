@@ -7,10 +7,13 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] BACKLOG P1: Add recorder rotation/retention controls (max size and optional count-based rollover) to prevent unbounded NDJSON growth.
+- [ ] SESSION P0: Recorder rotation/retention controls for NDJSON recordings (max-bytes + max-files backups) to prevent unbounded growth.
+- [ ] SESSION P0: Track root `AGENTS.md` contract in git (currently only `docs/AGENTS.md` is tracked).
+- [ ] SESSION P1: Integration tests: replay match modes (`signature`, `method`, `tool`) at proxy layer, including notification edge cases and ID remapping.
+- [ ] SESSION P2: Docs: update `README.md` + `policy.example.yaml` with recorder rotation/retention config and recommended defaults.
+- [ ] SESSION P2: Add replay lookup micro-benchmarks (signature/method/tool) to catch regressions in hot paths.
 - [ ] BACKLOG P1: Add streaming/SSE passthrough mode to support long-running MCP tool responses.
-- [ ] BACKLOG P2: Add integration tests for replay match modes (`signature`, `method`, `tool`) with notification edge cases.
-- [ ] BACKLOG P2: Add benchmark coverage for batch throughput and replay lookup hot paths.
+- [ ] BACKLOG P2: Add benchmark coverage for batch throughput and replay lookup hot paths (beyond micro-benchmarks).
 
 ## Implemented
 - [x] 2026-02-09: P0 replay ID remapping implemented for replay hits in single and batch flows.
