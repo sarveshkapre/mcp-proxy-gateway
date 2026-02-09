@@ -1,7 +1,8 @@
 # CHANGELOG
 
 ## Unreleased
-- (none yet)
+- Add optional Prometheus text exposition endpoint at `GET /metrics` (enable via `--prometheus-metrics` or `policy.http.prometheus_metrics`).
+- Extend `/metricsz` JSON payload with `latency_count` and `latency_sum_ms`.
 
 ## 0.2.0 - 2026-02-09
 - Add SSE passthrough for long-running upstream responses when the upstream responds with `Content-Type: text/event-stream` (client requests with `Accept: text/event-stream`).

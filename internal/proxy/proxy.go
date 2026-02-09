@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -28,6 +29,7 @@ type Server struct {
 	recorder        *record.Recorder
 	replay          *record.ReplayStore
 	replayStrict    bool
+	promMetrics     bool
 	maxBody         int64
 	originAllowlist map[string]struct{}
 	forwardHeaders  map[string]struct{}
@@ -42,6 +44,8 @@ type proxyMetrics struct {
 	replayMissesTotal      atomic.Uint64
 	validationRejectsTotal atomic.Uint64
 	upstreamErrorsTotal    atomic.Uint64
+	latencyCount           atomic.Uint64
+	latencySumMs           atomic.Uint64
 	latencyLE5ms           atomic.Uint64
 	latencyLE20ms          atomic.Uint64
 	latencyLE100ms         atomic.Uint64
@@ -100,7 +104,11 @@ func (m *proxyMetrics) observeLatency(d time.Duration) {
 	if m == nil {
 		return
 	}
+	m.latencyCount.Add(1)
 	ms := d.Milliseconds()
+	if ms >= 0 {
+		m.latencySumMs.Add(uint64(ms))
+	}
 	switch {
 	case ms <= 5:
 		m.latencyLE5ms.Add(1)
@@ -128,6 +136,8 @@ func (m *proxyMetrics) snapshot() map[string]any {
 		"replay_misses_total":      m.replayMissesTotal.Load(),
 		"validation_rejects_total": m.validationRejectsTotal.Load(),
 		"upstream_errors_total":    m.upstreamErrorsTotal.Load(),
+		"latency_count":            m.latencyCount.Load(),
+		"latency_sum_ms":           m.latencySumMs.Load(),
 		"latency_buckets_ms": map[string]uint64{
 			"le_5":    m.latencyLE5ms.Load(),
 			"le_20":   m.latencyLE20ms.Load(),
@@ -140,7 +150,7 @@ func (m *proxyMetrics) snapshot() map[string]any {
 	}
 }
 
-func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, originAllowlist []string, forwardHeaders []string, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
+func NewServer(upstream *url.URL, validator *validate.Validator, recorder *record.Recorder, replay *record.ReplayStore, replayStrict bool, originAllowlist []string, forwardHeaders []string, promMetrics bool, maxBody int64, timeout time.Duration, logger *log.Logger) *Server {
 	if maxBody <= 0 {
 		maxBody = 1 << 20
 	}
@@ -186,6 +196,7 @@ func NewServer(upstream *url.URL, validator *validate.Validator, recorder *recor
 		recorder:        recorder,
 		replay:          replay,
 		replayStrict:    replayStrict,
+		promMetrics:     promMetrics,
 		maxBody:         maxBody,
 		originAllowlist: originAllow,
 		forwardHeaders:  forwardAllow,
@@ -204,6 +215,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/metricsz" {
 		s.handleMetricsz(w, r)
+		return
+	}
+	if r.URL.Path == "/metrics" && s.promMetrics {
+		s.handleMetricsProm(w, r)
 		return
 	}
 
@@ -417,6 +432,121 @@ func (s *Server) handleMetricsz(w http.ResponseWriter, r *http.Request) {
 	}
 	payload, _ := json.Marshal(s.metrics.snapshot())
 	s.writeRawJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleMetricsProm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	m := s.metrics
+	if m == nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	reqs := m.requestsTotal.Load()
+	batchItems := m.batchItemsTotal.Load()
+	replayHits := m.replayHitsTotal.Load()
+	replayMisses := m.replayMissesTotal.Load()
+	validationRejects := m.validationRejectsTotal.Load()
+	upstreamErrors := m.upstreamErrorsTotal.Load()
+
+	le5 := m.latencyLE5ms.Load()
+	le20 := m.latencyLE20ms.Load()
+	le100 := m.latencyLE100ms.Load()
+	le500 := m.latencyLE500ms.Load()
+	le1000 := m.latencyLE1000ms.Load()
+	gt1000 := m.latencyGT1000ms.Load()
+	latCount := m.latencyCount.Load()
+	latSum := m.latencySumMs.Load()
+
+	// Prometheus histogram buckets are cumulative counts.
+	b5 := le5
+	b20 := b5 + le20
+	b100 := b20 + le100
+	b500 := b100 + le500
+	b1000 := b500 + le1000
+	bInf := b1000 + gt1000
+
+	var buf bytes.Buffer
+	buf.WriteString("# HELP mcp_proxy_gateway_requests_total Total HTTP JSON-RPC requests received on POST /rpc.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_requests_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_requests_total ")
+	buf.WriteString(formatUint(reqs))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_batch_items_total Total JSON-RPC batch items processed.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_batch_items_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_batch_items_total ")
+	buf.WriteString(formatUint(batchItems))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_replay_hits_total Total replay lookup hits.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_replay_hits_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_replay_hits_total ")
+	buf.WriteString(formatUint(replayHits))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_replay_misses_total Total replay lookup misses.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_replay_misses_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_replay_misses_total ")
+	buf.WriteString(formatUint(replayMisses))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_validation_rejects_total Total tool call validation rejects.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_validation_rejects_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_validation_rejects_total ")
+	buf.WriteString(formatUint(validationRejects))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_upstream_errors_total Total upstream errors (connection, read, or size limit).\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_upstream_errors_total counter\n")
+	buf.WriteString("mcp_proxy_gateway_upstream_errors_total ")
+	buf.WriteString(formatUint(upstreamErrors))
+	buf.WriteString("\n")
+
+	buf.WriteString("# HELP mcp_proxy_gateway_latency_ms Upstream and validation latency histogram in milliseconds.\n")
+	buf.WriteString("# TYPE mcp_proxy_gateway_latency_ms histogram\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"5\"} ")
+	buf.WriteString(formatUint(b5))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"20\"} ")
+	buf.WriteString(formatUint(b20))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"100\"} ")
+	buf.WriteString(formatUint(b100))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"500\"} ")
+	buf.WriteString(formatUint(b500))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"1000\"} ")
+	buf.WriteString(formatUint(b1000))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_bucket{le=\"+Inf\"} ")
+	buf.WriteString(formatUint(bInf))
+	buf.WriteString("\n")
+	buf.WriteString("mcp_proxy_gateway_latency_ms_sum ")
+	buf.WriteString(formatUint(latSum))
+	buf.WriteString("\n")
+	// Use observed count (not derived from buckets) so it stays correct if bucket logic changes.
+	buf.WriteString("mcp_proxy_gateway_latency_ms_count ")
+	buf.WriteString(formatUint(latCount))
+	buf.WriteString("\n")
+
+	_, _ = w.Write(buf.Bytes())
+}
+
+func formatUint(v uint64) string {
+	// Avoid fmt for hot paths; this is debug/ops only, but keep deps minimal.
+	return strconv.FormatUint(v, 10)
 }
 
 func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -711,6 +841,19 @@ func (s *Server) handleBatch(w http.ResponseWriter, r *http.Request, body []byte
 				return
 			}
 			defer upstreamHTTPResp.Body.Close()
+
+			// Streaming is intentionally unsupported for batch items. Treat any
+			// upstream streaming response as an upstream error to avoid returning
+			// non-JSON payloads to the batch client.
+			if isEventStreamContentType(upstreamHTTPResp.Header.Get("Content-Type")) {
+				s.metrics.incUpstreamError()
+				if len(req.ID) > 0 {
+					resp := jsonrpc.ErrorResponse(req.ID, jsonrpc.ErrServer, "upstream streaming not supported for batch", nil)
+					payload, _ := json.Marshal(resp)
+					responses = append(responses, json.RawMessage(payload))
+				}
+				return
+			}
 
 			upstreamResp, err := s.readUpstreamJSON(upstreamHTTPResp)
 			if err != nil {

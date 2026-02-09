@@ -49,6 +49,10 @@ type HTTPPolicy struct {
 	// HTTP proxy. "Authorization" is forwarded regardless of this list (to support
 	// authenticated upstreams) and "Accept" is forwarded only for SSE requests.
 	ForwardHeaders []string `json:"forward_headers" yaml:"forward_headers"`
+
+	// Optional Prometheus text exposition endpoint at GET /metrics.
+	// Defaults to false to preserve local-first defaults; use /metricsz for JSON.
+	PrometheusMetrics bool `json:"prometheus_metrics" yaml:"prometheus_metrics"`
 }
 
 type ToolEntry struct {

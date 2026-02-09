@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,7 +23,7 @@ import (
 )
 
 func TestHealthz(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -47,7 +49,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestMetricsz(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 
 	r := httptest.NewRequest(http.MethodGet, "/metricsz", nil)
 	w := httptest.NewRecorder()
@@ -68,11 +70,54 @@ func TestMetricsz(t *testing.T) {
 		"replay_misses_total",
 		"validation_rejects_total",
 		"upstream_errors_total",
+		"latency_count",
+		"latency_sum_ms",
 		"latency_buckets_ms",
 	} {
 		if _, ok := body[key]; !ok {
 			t.Fatalf("missing key %q in metrics payload", key)
 		}
+	}
+}
+
+func TestMetricsPromDisabledReturns404(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestMetricsPromEnabledReturnsText(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, true, 1024, time.Second, nil)
+
+	// Produce at least one latency observation.
+	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"q":"x"}}`)
+	rpcReq := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
+	rpcReq.Header.Set("Content-Type", "application/json")
+	rpcW := httptest.NewRecorder()
+	srv.ServeHTTP(rpcW, rpcReq)
+
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	ct := w.Header().Get("Content-Type")
+	if ct == "" || !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("content-type=%q", ct)
+	}
+	body := w.Body.String()
+	if !bytes.Contains([]byte(body), []byte("mcp_proxy_gateway_requests_total")) {
+		t.Fatalf("missing requests_total in body: %s", body)
+	}
+	if !bytes.Contains([]byte(body), []byte("mcp_proxy_gateway_latency_ms_bucket{le=\"+Inf\"}")) {
+		t.Fatalf("missing latency histogram buckets in body: %s", body)
 	}
 }
 
@@ -83,7 +128,7 @@ func TestMetricsReplayHitAndMissCounters(t *testing.T) {
 		mustSig(t, hitRequest): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
 	})
 
-	srv := NewServer(nil, nil, nil, replay, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, false, nil, nil, false, 1024, time.Second, nil)
 
 	for _, req := range []json.RawMessage{hitRequest, missRequest} {
 		r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
@@ -113,7 +158,7 @@ func TestReplayMatchByMethodAtProxyLayerRemapsID(t *testing.T) {
 		},
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 
 	liveReq := []byte(`{"jsonrpc":"2.0","id":42,"method":"ping","params":{"q":"live"}}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(liveReq))
@@ -142,7 +187,7 @@ func TestReplayMatchByToolAtProxyLayerRemapsID(t *testing.T) {
 		},
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 
 	liveReq := []byte(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"live"}}}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(liveReq))
@@ -171,7 +216,7 @@ func TestReplayMatchByMethodNotificationReturns204(t *testing.T) {
 		},
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 
 	// Notification: omit id.
 	liveReq := []byte(`{"jsonrpc":"2.0","method":"ping","params":{"q":"live"}}`)
@@ -198,7 +243,7 @@ func TestMetricsValidationRejectCounter(t *testing.T) {
 		t.Fatalf("validator init: %v", err)
 	}
 
-	srv := NewServer(nil, validator, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, validator, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"fs.read","arguments":{"path":"/tmp/a"}}}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
 	r.Header.Set("Content-Type", "application/json")
@@ -219,7 +264,7 @@ func TestMetricsValidationRejectCounter(t *testing.T) {
 }
 
 func TestMetricsUpstreamErrorCounter(t *testing.T) {
-	srv := NewServer(mustParseURL(t, "http://example.invalid"), nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(mustParseURL(t, "http://example.invalid"), nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 	srv.client.Transport = roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
 		return nil, errors.New("dial failed")
 	})
@@ -241,7 +286,7 @@ func TestMetricsUpstreamErrorCounter(t *testing.T) {
 }
 
 func TestMetricsBatchItemsCounter(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 	batch := json.RawMessage(`[
     {"jsonrpc":"2.0","method":"ping"},
     {"jsonrpc":"2.0","method":"ping"}
@@ -270,7 +315,7 @@ func TestMetricsBatchItemsCounter(t *testing.T) {
 }
 
 func TestRequestTooLargeReturns413(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil, false, nil, nil, 10, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 10, time.Second, nil)
 
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader([]byte("01234567890")))
 	r.Header.Set("Content-Type", "application/json")
@@ -299,7 +344,7 @@ func TestUpstreamResponseTooLargeReturnsJSONRPCError(t *testing.T) {
 		t.Fatalf("parse upstream url: %v", err)
 	}
 
-	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, 40, time.Second, nil)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 40, time.Second, nil)
 
 	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
@@ -312,6 +357,70 @@ func TestUpstreamResponseTooLargeReturnsJSONRPCError(t *testing.T) {
 	}
 	if !bytes.Contains(w.Body.Bytes(), []byte("upstream response too large")) {
 		t.Fatalf("expected upstream response too large error, got=%s", w.Body.String())
+	}
+}
+
+func TestBatchDoesNotForwardAcceptEventStream(t *testing.T) {
+	t.Parallel()
+
+	var sawAccept atomic.Value // string
+	sawAccept.Store("")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAccept.Store(r.Header.Get("Accept"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`))
+	}))
+	t.Cleanup(upstream.Close)
+
+	upstreamURL := mustParseURL(t, upstream.URL)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	batch := []byte(`[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","id":2,"method":"ping"}]`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "text/event-stream")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got, _ := sawAccept.Load().(string); strings.Contains(strings.ToLower(got), "text/event-stream") {
+		t.Fatalf("expected batch path to not forward Accept, got=%q", got)
+	}
+}
+
+func TestBatchUpstreamSSEIsError(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: hi\n\n"))
+	}))
+	t.Cleanup(upstream.Close)
+
+	upstreamURL := mustParseURL(t, upstream.URL)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	batch := []byte(`[{"jsonrpc":"2.0","id":1,"method":"ping"}]`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var out []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("len=%d want=1", len(out))
+	}
+	if _, ok := out[0]["error"]; !ok {
+		t.Fatalf("expected error response, got=%v", out[0])
 	}
 }
 
@@ -328,7 +437,7 @@ func TestUpstreamRequestUsesClientContext(t *testing.T) {
 		return nil, req.Context().Err()
 	})
 
-	srv := NewServer(mustParseURL(t, "http://example.invalid"), nil, nil, nil, false, nil, nil, 1024, 10*time.Second, nil)
+	srv := NewServer(mustParseURL(t, "http://example.invalid"), nil, nil, nil, false, nil, nil, false, 1024, 10*time.Second, nil)
 	srv.client.Transport = transport
 
 	reqBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
@@ -378,7 +487,7 @@ func TestBatchReplay(t *testing.T) {
 		mustSig(t, req2): json.RawMessage(`{"jsonrpc":"2.0","id":2,"result":{"ok":true,"n":2}}`),
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 	batch := json.RawMessage("[" + string(req1) + "," + string(req2) + "]")
 
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
@@ -421,7 +530,7 @@ func TestBatchForwardsSequentially(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse upstream url: %v", err)
 	}
-	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 
 	batch := json.RawMessage(`[
     {"jsonrpc":"2.0","id":1,"method":"ping"},
@@ -450,7 +559,7 @@ func TestBatchForwardsSequentially(t *testing.T) {
 }
 
 func TestBatchNotificationsReturn204(t *testing.T) {
-	srv := NewServer(nil, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 	batch := json.RawMessage(`[
     {"jsonrpc":"2.0","method":"ping"},
     {"jsonrpc":"2.0","method":"ping"}
@@ -480,7 +589,7 @@ func TestSingleNotificationReturns204AndForwards(t *testing.T) {
 		t.Fatalf("parse upstream url: %v", err)
 	}
 
-	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
 	req := []byte(`{"jsonrpc":"2.0","method":"ping"}`)
 
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
@@ -507,7 +616,7 @@ func TestSingleReplayResponseIDIsRewritten(t *testing.T) {
 		mustSig(t, storedReq): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(incomingReq))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -533,7 +642,7 @@ func TestSingleNotificationReplayHitReturns204(t *testing.T) {
 		mustSig(t, storedReq): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(incomingReq))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -555,7 +664,7 @@ func TestBatchReplayResponseIDIsRewritten(t *testing.T) {
 		mustSig(t, storedReq): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
 	})
 
-	srv := NewServer(nil, nil, nil, replay, true, nil, nil, 1024, time.Second, nil)
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
 	batch := json.RawMessage("[" + string(incomingReq) + "]")
 
 	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))

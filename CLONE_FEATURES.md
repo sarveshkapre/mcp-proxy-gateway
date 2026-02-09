@@ -7,12 +7,22 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
+- [ ] SESSION P0: Add Prometheus exposition endpoint (`GET /metrics`) behind a policy flag; keep `/metricsz` JSON as default.
+  Scoring: impact=med effort=low fit=high diff=parity risk=low confidence=high
+- [ ] SESSION P1: Make `make smoke` portable to Linux runners by using bash (current `scripts/smoke.sh` uses `pipefail` but declares `/bin/sh`).
+  Scoring: impact=med effort=low fit=high diff=quality risk=low confidence=high
+- [ ] SESSION P1: Tighten and document SSE/replay/batch interactions (unsupported combos) and add targeted regression coverage.
+  Scoring: impact=med effort=med fit=high diff=quality risk=low confidence=med
+- [ ] BACKLOG P2: Add handler-level benchmarks for batch proxy throughput and replay lookup hot paths (beyond micro-benchmarks).
+  Scoring: impact=low effort=med fit=med diff=quality risk=low confidence=med
 - [ ] BACKLOG P2: Add integration tests for streaming + replay/strict interactions and batch behavior (explicitly document unsupported combos).
   Scoring: impact=med effort=med fit=med diff=parity risk=med confidence=med
-- [ ] BACKLOG P2: Add benchmark coverage for proxy batch throughput (handler-level) and replay lookup hot paths (beyond micro-benchmarks).
-  Scoring: impact=low effort=med fit=med diff=quality risk=low confidence=med
-- [ ] BACKLOG P3: Add Prometheus exposition format (`/metrics`) behind a flag/policy while keeping `/metricsz` JSON as the local-first default.
+- [ ] BACKLOG P3: Add optional Prometheus labels for key dimensions (replay match mode, upstream configured) without exploding cardinality.
+  Scoring: impact=low effort=med fit=med diff=nice risk=med confidence=low
+- [ ] BACKLOG P3: Add an opt-in request ID propagation story (`X-Request-Id` generation + forwarding + log correlation).
   Scoring: impact=low effort=med fit=med diff=nice risk=low confidence=med
+- [ ] BACKLOG P3: Add optional pprof/debug endpoints behind an explicit flag (local-only) for performance investigations.
+  Scoring: impact=low effort=low fit=med diff=quality risk=low confidence=med
 - [ ] BACKLOG P3: Extend streaming support beyond SSE passthrough (Streamable HTTP/session semantics) while preserving local-first defaults.
   Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
 

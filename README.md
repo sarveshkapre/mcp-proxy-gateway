@@ -10,6 +10,7 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Streams upstream SSE responses when the client requests it (`Accept: text/event-stream`)
 - Health endpoint for status checks (`GET /healthz`)
 - Metrics endpoint for local runtime counters (`GET /metricsz`)
+- Optional Prometheus exposition endpoint (`GET /metrics`) when enabled (flag/policy)
 - Supports JSON-RPC batch requests (handled sequentially per item)
 - Implements JSON-RPC notification semantics (`204 No Content` when request omits `id`)
 - Rewrites replayed response IDs to the incoming request ID for correlation safety
@@ -28,6 +29,7 @@ make build
 Send JSON-RPC requests to `http://localhost:8080/rpc`.
 Check health at `http://localhost:8080/healthz`.
 Check metrics at `http://localhost:8080/metricsz`.
+Enable Prometheus metrics at `http://localhost:8080/metrics` with `--prometheus-metrics` (or `policy.http.prometheus_metrics: true`).
 
 ## Demo (replay)
 ```bash
@@ -65,6 +67,9 @@ Notes:
 - The gateway streams the upstream response bytes as-is when the upstream responds with `Content-Type: text/event-stream`.
 - Streamed responses are not recorded (record/replay is JSON-only).
 - Streamed responses are still subject to `--max-body` (raise it for longer streams).
+- Streaming is only supported for single JSON-RPC requests (not batches).
+- Replay mode never streams; it only serves recorded JSON responses.
+- For batch requests, the gateway does not forward `Accept: text/event-stream` upstream; if the upstream still responds with `text/event-stream`, the gateway treats it as an upstream error for that batch item.
 
 ## Policy example
 ```yaml
@@ -85,6 +90,8 @@ http:
   # - `Authorization` is forwarded regardless to support authenticated upstreams.
   # - `Accept` is forwarded only for SSE requests (`Accept: text/event-stream`).
   forward_headers: ["Traceparent", "Tracestate", "Baggage", "X-Request-Id"]
+  # Optional Prometheus text exposition endpoint at GET /metrics.
+  prometheus_metrics: false
 
 record:
   # Redaction is applied before writing NDJSON recordings.

@@ -26,6 +26,7 @@ func main() {
 	recordMaxFiles := flag.Int("record-max-files", -1, "record rotation backups to retain (0 keeps none, -1 uses policy/default)")
 	replayPath := flag.String("replay", "", "replay file path (NDJSON)")
 	replayStrict := flag.Bool("replay-strict", false, "error on replay miss")
+	prometheusMetrics := flag.Bool("prometheus-metrics", false, "enable Prometheus text exposition at GET /metrics")
 	maxBody := flag.Int64("max-body", 1<<20, "max request/response body in bytes")
 	timeout := flag.Duration("timeout", 10*time.Second, "upstream request timeout")
 	flag.Parse()
@@ -58,6 +59,12 @@ func main() {
 		recordPolicy = policy.Record
 		replayPolicy = policy.Replay
 		httpPolicy = policy.HTTP
+	}
+
+	// Enablement precedence: CLI flag enables regardless of policy; otherwise defer to policy.
+	enablePromMetrics := *prometheusMetrics
+	if !enablePromMetrics && httpPolicy.PrometheusMetrics {
+		enablePromMetrics = true
 	}
 
 	// Rotation config precedence: CLI (if not -1) overrides policy.
@@ -97,7 +104,7 @@ func main() {
 		logger.Fatalf("failed to load replay file: %v", err)
 	}
 
-	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, httpPolicy.OriginAllowlist, httpPolicy.ForwardHeaders, *maxBody, *timeout, logger)
+	srv := proxy.NewServer(upstreamURL, validator, recorder, replay, *replayStrict, httpPolicy.OriginAllowlist, httpPolicy.ForwardHeaders, enablePromMetrics, *maxBody, *timeout, logger)
 
 	httpServer := &http.Server{
 		Addr:              *listen,
@@ -109,7 +116,11 @@ func main() {
 	defer stop()
 
 	logger.Printf("listening on %s", *listen)
-	logger.Printf("endpoints: POST /rpc, GET /healthz, GET /metricsz")
+	if enablePromMetrics {
+		logger.Printf("endpoints: POST /rpc, GET /healthz, GET /metricsz, GET /metrics")
+	} else {
+		logger.Printf("endpoints: POST /rpc, GET /healthz, GET /metricsz")
+	}
 	if upstreamURL != nil {
 		logger.Printf("upstream %s", upstreamURL.String())
 	} else {

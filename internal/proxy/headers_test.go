@@ -37,7 +37,7 @@ func TestUpstreamForwardHeadersAllowlist(t *testing.T) {
 	upstreamURL := mustParseURL(t, upstream.URL)
 	upstreamURL.Path = "/rpc"
 
-	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, []string{"Traceparent", "X-Request-Id"}, 1024, 5*time.Second, nil)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, []string{"Traceparent", "X-Request-Id"}, false, 1024, 5*time.Second, nil)
 	gw := httptest.NewServer(srv)
 	t.Cleanup(gw.Close)
 

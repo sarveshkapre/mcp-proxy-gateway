@@ -17,7 +17,7 @@ make release
 
 ## Development notes
 - The HTTP gateway listens on `/rpc`.
-- Operational endpoints: `/healthz` and `/metricsz`.
+- Operational endpoints: `/healthz` and `/metricsz` (and optional Prometheus `GET /metrics` when enabled).
 - Record/replay files are NDJSON (one request/response per line).
 - Recorder rotation/retention is configurable via `policy.record.max_bytes` / `policy.record.max_files` (and can be overridden via CLI flags).
 - JSON-RPC batch requests are supported; the gateway processes batch items sequentially.

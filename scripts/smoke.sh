@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 set -euo pipefail
 
 PORT=8099
@@ -163,6 +163,7 @@ fi
   --listen :${PORT} \
   --upstream "http://localhost:${UPSTREAM_PORT}/rpc" \
   --policy "${POLICY_FILE}" \
+  --prometheus-metrics \
   >/tmp/mcp-proxy-gateway-smoke.log 2>&1 &
 SERVER_PID=$!
 
@@ -187,6 +188,10 @@ origin_status=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PO
   -o /dev/null \
   -w '%{http_code}')
 [ "$origin_status" = "403" ]
+
+# Verify Prometheus metrics endpoint is available when enabled.
+prom=$(curl -sS "http://localhost:${PORT}/metrics")
+echo "$prom" | grep -q 'mcp_proxy_gateway_requests_total'
 
 # Verify SSE passthrough (also confirms Authorization header forwarding).
 sse_headers="/tmp/mcp-proxy-gateway-smoke-sse-headers.txt"

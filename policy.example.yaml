@@ -15,6 +15,9 @@ http:
   # - `Accept` is forwarded only for SSE requests (`Accept: text/event-stream`).
   # - Avoid adding secret-bearing headers unless you intend to propagate them.
   forward_headers: ["Traceparent", "Tracestate", "Baggage", "X-Request-Id"]
+  # Optional Prometheus text exposition endpoint at GET /metrics.
+  # Defaults to false; enable explicitly if you want Prometheus scraping.
+  prometheus_metrics: false
 
 record:
   # Redaction is applied before writing NDJSON recordings.

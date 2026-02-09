@@ -42,7 +42,7 @@ func TestSSEPassthroughStreamsAndSkipsRecord(t *testing.T) {
 	rec := record.NewRecorder(recordPath, nil, 0, 0)
 
 	upstreamURL := mustParseURL(t, upstream.URL)
-	srv := NewServer(upstreamURL, nil, rec, nil, false, nil, nil, 1024, 5*time.Second, nil)
+	srv := NewServer(upstreamURL, nil, rec, nil, false, nil, nil, false, 1024, 5*time.Second, nil)
 	gw := httptest.NewServer(srv)
 	t.Cleanup(gw.Close)
 
