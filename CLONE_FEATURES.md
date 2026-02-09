@@ -8,6 +8,7 @@
 
 ## Candidate Features To Do
 - [ ] BACKLOG P1: Add streaming/SSE passthrough mode to support long-running MCP tool responses.
+- [ ] BACKLOG P1: Security hardening for local HTTP exposure: optional `Origin` allowlist / CSRF-style request mitigation for browser-initiated requests (reject unexpected `Origin` headers by default when configured).
 - [ ] BACKLOG P2: Add benchmark coverage for batch throughput and replay lookup hot paths (beyond micro-benchmarks).
 
 ## Implemented
@@ -42,6 +43,8 @@
 - Recorder rotation defaults are intentionally conservative: rotation is off unless `max_bytes` (or `--record-max-bytes`) is set, and backups are retained unless explicitly configured to `0`.
 - `docs/PLAN.md` checklist had drifted out of sync with implementation; keeping this updated prevents false-positive backlog detection in automation loops.
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
+- Market scan (2026-02-09, untrusted): MCP gateways commonly emphasize Streamable HTTP/SSE support and session management for web clients, plus optional auth/rate limiting/observability when exposed beyond localhost.
+  Sources: https://github.com/atrawog/mcp-streamablehttp-proxy, https://github.com/sigbit/mcp-auth-proxy, https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway.
 
 ## Notes
 - This file is maintained by the autonomous clone loop.

@@ -37,3 +37,17 @@
 - Commit: `9a7273a65d19812b180708576e8d85e891ce6c11`
 - Confidence: high
 - Trust label: verified-local
+
+## Entry: 2026-02-09 - Bounded Market Scan (MCP Gateways/Proxies)
+- Decision: Track baseline expectations for MCP gateways and keep scope aligned with local-first goals (no auth by default).
+- Why: Streaming transport support and basic security hardening expectations are evolving quickly; capturing the baseline helps prioritize parity gaps.
+- Evidence (external, untrusted):
+  - Streamable HTTP proxy patterns (stdio to Streamable HTTP): https://github.com/atrawog/mcp-streamablehttp-proxy
+  - Auth/rate-limiting style proxy examples (out of scope for this repo’s local-first guardrails): https://github.com/sigbit/mcp-auth-proxy
+  - “Gateway as middleware” patterns: https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway
+  - OAuth gateway example (out of scope): https://github.com/atrawog/mcp-oauth-gateway
+- Confidence: medium
+- Trust label: untrusted-web
+- Follow-ups:
+  - Prioritize Streamable HTTP/SSE support as the next parity feature.
+  - Add optional `Origin` allowlist hardening to reduce browser-initiated request risk when bound beyond localhost.
