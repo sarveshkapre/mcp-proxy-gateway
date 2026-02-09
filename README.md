@@ -8,6 +8,7 @@ Observe and gate MCP tool calls with schema validation, and record/replay for de
 - Records requests/responses to NDJSON
 - Replays recorded calls without an upstream server
 - Health endpoint for status checks (`GET /healthz`)
+- Metrics endpoint for local runtime counters (`GET /metricsz`)
 - Supports JSON-RPC batch requests (handled sequentially per item)
 - Implements JSON-RPC notification semantics (`204 No Content` when request omits `id`)
 - Rewrites replayed response IDs to the incoming request ID for correlation safety
@@ -25,6 +26,7 @@ make build
 
 Send JSON-RPC requests to `http://localhost:8080/rpc`.
 Check health at `http://localhost:8080/healthz`.
+Check metrics at `http://localhost:8080/metricsz`.
 
 ## Demo (replay)
 ```bash

@@ -56,4 +56,9 @@ notif_status=$(printf "%s" "$NOTIFICATION" | curl -sS -X POST "http://localhost:
 health=$(curl -sS "http://localhost:${PORT}/healthz")
 echo "$health" | grep -q '"ok":true'
 
+metrics=$(curl -sS "http://localhost:${PORT}/metricsz")
+echo "$metrics" | grep -q '"requests_total"'
+echo "$metrics" | grep -Eq '"requests_total":[[:space:]]*[1-9]'
+echo "$metrics" | grep -q '"latency_buckets_ms"'
+
 echo "smoke ok"

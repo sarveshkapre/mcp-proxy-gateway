@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,9 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sarveshkapre/mcp-proxy-gateway/internal/config"
 	"github.com/sarveshkapre/mcp-proxy-gateway/internal/jsonrpc"
 	"github.com/sarveshkapre/mcp-proxy-gateway/internal/record"
 	"github.com/sarveshkapre/mcp-proxy-gateway/internal/signature"
+	"github.com/sarveshkapre/mcp-proxy-gateway/internal/validate"
 )
 
 func TestHealthz(t *testing.T) {
@@ -40,6 +43,145 @@ func TestHealthz(t *testing.T) {
 	}
 	if upstreamConfigured, _ := body["upstream_configured"].(bool); upstreamConfigured {
 		t.Fatalf("expected upstream_configured=false")
+	}
+}
+
+func TestMetricsz(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, 1024, time.Second, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/metricsz", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type=%q", ct)
+	}
+
+	body := readMetrics(t, srv)
+	for _, key := range []string{
+		"requests_total",
+		"batch_items_total",
+		"replay_hits_total",
+		"replay_misses_total",
+		"validation_rejects_total",
+		"upstream_errors_total",
+		"latency_buckets_ms",
+	} {
+		if _, ok := body[key]; !ok {
+			t.Fatalf("missing key %q in metrics payload", key)
+		}
+	}
+}
+
+func TestMetricsReplayHitAndMissCounters(t *testing.T) {
+	hitRequest := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"q":"hit"}}`)
+	missRequest := json.RawMessage(`{"jsonrpc":"2.0","id":2,"method":"ping","params":{"q":"miss"}}`)
+	replay := mustReplayStore(t, map[string]json.RawMessage{
+		mustSig(t, hitRequest): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+	})
+
+	srv := NewServer(nil, nil, nil, replay, false, 1024, time.Second, nil)
+
+	for _, req := range []json.RawMessage{hitRequest, missRequest} {
+		r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, r)
+	}
+
+	metrics := readMetrics(t, srv)
+	if got := metricValue(t, metrics, "requests_total"); got != 2 {
+		t.Fatalf("requests_total=%d want=2", got)
+	}
+	if got := metricValue(t, metrics, "replay_hits_total"); got != 1 {
+		t.Fatalf("replay_hits_total=%d want=1", got)
+	}
+	if got := metricValue(t, metrics, "replay_misses_total"); got != 1 {
+		t.Fatalf("replay_misses_total=%d want=1", got)
+	}
+}
+
+func TestMetricsValidationRejectCounter(t *testing.T) {
+	validator, err := validate.New(&config.Policy{
+		Mode:       "enforce",
+		AllowTools: []string{"web.search"},
+		Tools:      map[string]config.ToolEntry{},
+	})
+	if err != nil {
+		t.Fatalf("validator init: %v", err)
+	}
+
+	srv := NewServer(nil, validator, nil, nil, false, 1024, time.Second, nil)
+	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"fs.read","arguments":{"path":"/tmp/a"}}}`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	metrics := readMetrics(t, srv)
+	if got := metricValue(t, metrics, "validation_rejects_total"); got != 1 {
+		t.Fatalf("validation_rejects_total=%d want=1", got)
+	}
+	if got := metricValue(t, metrics, "requests_total"); got != 1 {
+		t.Fatalf("requests_total=%d want=1", got)
+	}
+}
+
+func TestMetricsUpstreamErrorCounter(t *testing.T) {
+	srv := NewServer(mustParseURL(t, "http://example.invalid"), nil, nil, nil, false, 1024, time.Second, nil)
+	srv.client.Transport = roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})
+
+	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(req))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	metrics := readMetrics(t, srv)
+	if got := metricValue(t, metrics, "upstream_errors_total"); got != 1 {
+		t.Fatalf("upstream_errors_total=%d want=1", got)
+	}
+}
+
+func TestMetricsBatchItemsCounter(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, 1024, time.Second, nil)
+	batch := json.RawMessage(`[
+    {"jsonrpc":"2.0","method":"ping"},
+    {"jsonrpc":"2.0","method":"ping"}
+  ]`)
+
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(batch))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	metrics := readMetrics(t, srv)
+	if got := metricValue(t, metrics, "requests_total"); got != 1 {
+		t.Fatalf("requests_total=%d want=1", got)
+	}
+	if got := metricValue(t, metrics, "batch_items_total"); got != 2 {
+		t.Fatalf("batch_items_total=%d want=2", got)
+	}
+	latency := metricMap(t, metrics, "latency_buckets_ms")
+	if got := metricValue(t, latency, "total"); got != 2 {
+		t.Fatalf("latency_buckets_ms.total=%d want=2", got)
 	}
 }
 
@@ -397,4 +539,45 @@ func mustReplayStore(t *testing.T, entries map[string]json.RawMessage) *record.R
 		t.Fatalf("load replay: %v", err)
 	}
 	return store
+}
+
+func readMetrics(t *testing.T, srv *Server) map[string]any {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "/metricsz", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("metrics status=%d body=%s", w.Code, w.Body.String())
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal metrics: %v", err)
+	}
+	return out
+}
+
+func metricValue(t *testing.T, m map[string]any, key string) uint64 {
+	t.Helper()
+	raw, ok := m[key]
+	if !ok {
+		t.Fatalf("missing metric %q", key)
+	}
+	val, ok := raw.(float64)
+	if !ok {
+		t.Fatalf("metric %q has non-numeric value %T", key, raw)
+	}
+	return uint64(val)
+}
+
+func metricMap(t *testing.T, m map[string]any, key string) map[string]any {
+	t.Helper()
+	raw, ok := m[key]
+	if !ok {
+		t.Fatalf("missing metric map %q", key)
+	}
+	val, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("metric map %q has invalid value %T", key, raw)
+	}
+	return val
 }
