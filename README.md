@@ -63,6 +63,11 @@ record:
   # Redaction is applied before writing NDJSON recordings.
   redact_keys: ["token", "access_token", "api_key", "authorization"]
   redact_key_regex: ["(?i)secret|password"]
+  # Optional recorder lifecycle controls:
+  # - max_bytes rotates the active file when the next append would exceed this size.
+  # - max_files retains up to N rotated backups as `records.ndjson.1..N`.
+  max_bytes: 10485760 # 10 MiB
+  max_files: 3
 
 tools:
   web.search:

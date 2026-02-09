@@ -10,6 +10,11 @@ record:
   redact_keys: ["token", "access_token", "api_key", "authorization"]
   # Optional: regex match on JSON object keys.
   redact_key_regex: ["(?i)secret|password"]
+  # Optional: rotate the record file to prevent unbounded growth.
+  # When enabled, the active file is renamed to `path.1`, shifting older backups
+  # up to `path.N`.
+  max_bytes: 10485760 # 10 MiB
+  max_files: 3
 
 replay:
   # Match strategy for replay lookups: signature (default), method, or tool.

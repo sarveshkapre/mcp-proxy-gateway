@@ -8,6 +8,7 @@
   - `validation_rejects_total`
   - `upstream_errors_total`
   - `latency_buckets_ms`
+- Add recorder rotation/retention controls for NDJSON recordings (`policy.record.max_bytes`, `policy.record.max_files`, plus CLI overrides).
 - Add proxy metrics accounting hooks for single + batch paths and regression tests.
 - Extend smoke script to verify metrics endpoint availability and non-zero request count.
 - Upgrade CodeQL GitHub Action from `v3` to `v4` to avoid announced deprecation.

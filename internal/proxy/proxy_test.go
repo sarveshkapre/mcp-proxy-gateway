@@ -104,6 +104,90 @@ func TestMetricsReplayHitAndMissCounters(t *testing.T) {
 	}
 }
 
+func TestReplayMatchByMethodAtProxyLayerRemapsID(t *testing.T) {
+	recordedReq := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"q":"recorded"}}`)
+	replay := mustReplayStoreMatch(t, record.ReplayMatchMethod, []replayPair{
+		{
+			req:  recordedReq,
+			resp: json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+		},
+	})
+
+	srv := NewServer(nil, nil, nil, replay, true, 1024, time.Second, nil)
+
+	liveReq := []byte(`{"jsonrpc":"2.0","id":42,"method":"ping","params":{"q":"live"}}`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(liveReq))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if id, ok := out["id"].(float64); !ok || id != 42 {
+		t.Fatalf("expected id=42, got=%v", out["id"])
+	}
+}
+
+func TestReplayMatchByToolAtProxyLayerRemapsID(t *testing.T) {
+	recordedReq := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"recorded"}}}`)
+	replay := mustReplayStoreMatch(t, record.ReplayMatchTool, []replayPair{
+		{
+			req:  recordedReq,
+			resp: json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+		},
+	})
+
+	srv := NewServer(nil, nil, nil, replay, true, 1024, time.Second, nil)
+
+	liveReq := []byte(`{"jsonrpc":"2.0","id":99,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"live"}}}`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(liveReq))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if id, ok := out["id"].(float64); !ok || id != 99 {
+		t.Fatalf("expected id=99, got=%v", out["id"])
+	}
+}
+
+func TestReplayMatchByMethodNotificationReturns204(t *testing.T) {
+	recordedReq := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"q":"recorded"}}`)
+	replay := mustReplayStoreMatch(t, record.ReplayMatchMethod, []replayPair{
+		{
+			req:  recordedReq,
+			resp: json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+		},
+	})
+
+	srv := NewServer(nil, nil, nil, replay, true, 1024, time.Second, nil)
+
+	// Notification: omit id.
+	liveReq := []byte(`{"jsonrpc":"2.0","method":"ping","params":{"q":"live"}}`)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(liveReq))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Fatalf("expected empty body for notification, got=%q", w.Body.String())
+	}
+}
+
 func TestMetricsValidationRejectCounter(t *testing.T) {
 	validator, err := validate.New(&config.Policy{
 		Mode:       "enforce",
@@ -528,13 +612,40 @@ func mustReplayStore(t *testing.T, entries map[string]json.RawMessage) *record.R
 	}
 	_ = file.Close()
 
-	rec := record.NewRecorder(file.Name(), nil)
+	rec := record.NewRecorder(file.Name(), nil, 0, 0)
 	for sig, resp := range entries {
 		if err := rec.Append(sig, json.RawMessage(`{"jsonrpc":"2.0"}`), resp); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
 	store, err := record.LoadReplay(file.Name(), record.ReplayMatchSignature)
+	if err != nil {
+		t.Fatalf("load replay: %v", err)
+	}
+	return store
+}
+
+type replayPair struct {
+	req  json.RawMessage
+	resp json.RawMessage
+}
+
+func mustReplayStoreMatch(t *testing.T, match record.ReplayMatch, pairs []replayPair) *record.ReplayStore {
+	t.Helper()
+	file, err := os.CreateTemp(t.TempDir(), "records-*.ndjson")
+	if err != nil {
+		t.Fatalf("temp file: %v", err)
+	}
+	_ = file.Close()
+
+	rec := record.NewRecorder(file.Name(), nil, 0, 0)
+	for _, pair := range pairs {
+		sig := mustSig(t, pair.req)
+		if err := rec.Append(sig, pair.req, pair.resp); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+	store, err := record.LoadReplay(file.Name(), match)
 	if err != nil {
 		t.Fatalf("load replay: %v", err)
 	}
