@@ -209,25 +209,32 @@ func NewServer(upstream *url.URL, validator *validate.Validator, recorder *recor
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/healthz" {
+	switch r.URL.Path {
+	case "/healthz":
 		s.handleHealthz(w, r)
 		return
-	}
-	if r.URL.Path == "/metricsz" {
+	case "/metricsz":
 		s.handleMetricsz(w, r)
 		return
-	}
-	if r.URL.Path == "/metrics" && s.promMetrics {
-		s.handleMetricsProm(w, r)
+	case "/metrics":
+		// Treat /metrics as non-existent unless explicitly enabled to avoid
+		// accidentally exposing Prometheus-style endpoints.
+		if s.promMetrics {
+			s.handleMetricsProm(w, r)
+		} else {
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+		return
+	case "/rpc":
+		// Continue below.
+	default:
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
+	// /rpc is the only mutating endpoint; enforce POST for everything under it.
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if r.URL.Path != "/rpc" {
-		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	if origin := r.Header.Get("Origin"); origin != "" && len(s.originAllowlist) > 0 {
