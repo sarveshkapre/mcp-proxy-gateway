@@ -91,6 +91,28 @@ func TestMetricsPromDisabledReturns404(t *testing.T) {
 	}
 }
 
+func TestUnknownPathReturns404(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/nope", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestRPCEndpointWrongMethodReturns405(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/rpc", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestMetricsPromEnabledReturnsText(t *testing.T) {
 	srv := NewServer(nil, nil, nil, nil, false, nil, nil, true, 1024, time.Second, nil)
 

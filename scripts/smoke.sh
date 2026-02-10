@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT=8099
-UPSTREAM_PORT=8100
+pick_port() {
+  python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()
+PY
+}
+
+PORT="$(pick_port)"
+UPSTREAM_PORT="$(pick_port)"
+while [ "${UPSTREAM_PORT}" = "${PORT}" ]; do
+  UPSTREAM_PORT="$(pick_port)"
+done
 REPLAY_FILE="./records.example.ndjson"
 POLICY_FILE="./policy.example.yaml"
-SMOKE_BIN="/tmp/mcp-proxy-gateway-smoke-bin"
+SMOKE_BIN="/tmp/mcp-proxy-gateway-smoke-bin.$$"
+SMOKE_LOG="/tmp/mcp-proxy-gateway-smoke.$$.log"
+UPSTREAM_LOG="/tmp/mcp-proxy-gateway-upstream.$$.log"
+NOTIF_BODY="/tmp/mcp-proxy-gateway-smoke-notification-body.$$.txt"
+SSE_HEADERS="/tmp/mcp-proxy-gateway-smoke-sse-headers.$$.txt"
+SSE_BODY="/tmp/mcp-proxy-gateway-smoke-sse-body.$$.txt"
 
 REQUEST='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}}'
 NOTIFICATION='{"jsonrpc":"2.0","method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello","max_results":3}}}'
@@ -20,6 +38,8 @@ cleanup() {
     wait "$UPSTREAM_PID" >/dev/null 2>&1 || true
   fi
   rm -f "$SMOKE_BIN" >/dev/null 2>&1 || true
+  rm -f "$SMOKE_LOG" "$UPSTREAM_LOG" >/dev/null 2>&1 || true
+  rm -f "$NOTIF_BODY" "$SSE_HEADERS" "$SSE_BODY" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -39,7 +59,7 @@ go build -o "$SMOKE_BIN" ./cmd/mcp-proxy-gateway
   --listen :${PORT} \
   --replay "${REPLAY_FILE}" \
   --replay-strict \
-  >/tmp/mcp-proxy-gateway-smoke.log 2>&1 &
+  >"$SMOKE_LOG" 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to be ready (retry for ~5s).
@@ -63,14 +83,13 @@ response=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/r
 echo "$response" | grep -q '"jsonrpc"' 
 echo "$response" | grep -q '"Example"'
 
-notif_body="/tmp/mcp-proxy-gateway-smoke-notification-body.txt"
 notif_status=$(printf "%s" "$NOTIFICATION" | curl -sS -X POST "http://localhost:${PORT}/rpc" \
   -H 'Content-Type: application/json' \
   -d @- \
-  -o "$notif_body" \
+  -o "$NOTIF_BODY" \
   -w '%{http_code}')
 [ "$notif_status" = "204" ]
-[ ! -s "$notif_body" ]
+[ ! -s "$NOTIF_BODY" ]
 
 health=$(curl -sS "http://localhost:${PORT}/healthz")
 echo "$health" | grep -q '"ok":true'
@@ -85,7 +104,7 @@ echo "smoke ok"
 stop_server
 
 # Start a minimal upstream stub (SSE + JSON).
-python3 - <<PY >/tmp/mcp-proxy-gateway-upstream.log 2>&1 &
+python3 - <<PY >"$UPSTREAM_LOG" 2>&1 &
 import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -164,7 +183,7 @@ fi
   --upstream "http://localhost:${UPSTREAM_PORT}/rpc" \
   --policy "${POLICY_FILE}" \
   --prometheus-metrics \
-  >/tmp/mcp-proxy-gateway-smoke.log 2>&1 &
+  >"$SMOKE_LOG" 2>&1 &
 SERVER_PID=$!
 
 ready=0
@@ -194,19 +213,17 @@ prom=$(curl -sS "http://localhost:${PORT}/metrics")
 echo "$prom" | grep -q 'mcp_proxy_gateway_requests_total'
 
 # Verify SSE passthrough (also confirms Authorization header forwarding).
-sse_headers="/tmp/mcp-proxy-gateway-smoke-sse-headers.txt"
-sse_body="/tmp/mcp-proxy-gateway-smoke-sse-body.txt"
 sse_status=$(printf "%s" "$REQUEST" | curl -sS -N -X POST "http://localhost:${PORT}/rpc" \
   -H 'Content-Type: application/json' \
   -H 'Accept: text/event-stream' \
   -H 'Authorization: Bearer smoke' \
   -d @- \
-  -D "$sse_headers" \
-  -o "$sse_body" \
+  -D "$SSE_HEADERS" \
+  -o "$SSE_BODY" \
   -w '%{http_code}')
 [ "$sse_status" = "200" ]
-grep -qi '^content-type:[[:space:]]*text/event-stream' "$sse_headers"
-grep -q 'data: hello' "$sse_body"
-grep -q 'data: done' "$sse_body"
+grep -qi '^content-type:[[:space:]]*text/event-stream' "$SSE_HEADERS"
+grep -q 'data: hello' "$SSE_BODY"
+grep -q 'data: done' "$SSE_BODY"
 
 echo "smoke stream ok"
