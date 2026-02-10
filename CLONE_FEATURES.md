@@ -7,10 +7,6 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] SESSION P0: Add Prometheus exposition endpoint (`GET /metrics`) behind a policy flag; keep `/metricsz` JSON as default.
-  Scoring: impact=med effort=low fit=high diff=parity risk=low confidence=high
-- [ ] SESSION P1: Make `make smoke` portable to Linux runners by using bash (current `scripts/smoke.sh` uses `pipefail` but declares `/bin/sh`).
-  Scoring: impact=med effort=low fit=high diff=quality risk=low confidence=high
 - [ ] SESSION P1: Tighten and document SSE/replay/batch interactions (unsupported combos) and add targeted regression coverage.
   Scoring: impact=med effort=med fit=high diff=quality risk=low confidence=med
 - [ ] BACKLOG P2: Add handler-level benchmarks for batch proxy throughput and replay lookup hot paths (beyond micro-benchmarks).
@@ -27,6 +23,10 @@
   Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
 
 ## Implemented
+- [x] 2026-02-10: Fix routing semantics so disabled Prometheus exposition (`/metrics`) returns `404` (and unknown paths return `404`, not `405`).
+  Evidence: `internal/proxy/proxy.go`, `internal/proxy/proxy_test.go`, GitHub Actions CI run fix.
+- [x] 2026-02-10: Run `make smoke` in CI and harden `scripts/smoke.sh` to avoid port/tmp collisions; bump CI Go version to match tooling.
+  Evidence: `.github/workflows/ci.yml`, `scripts/smoke.sh`, `internal/proxy/proxy_test.go`.
 - [x] 2026-02-09: Policy-driven upstream header forwarding allowlist via `policy.http.forward_headers` (keeps narrow defaults to avoid becoming a generic HTTP proxy).
   Evidence: `internal/proxy/proxy.go` (allowlist copy), `internal/config/config.go` (policy field + validation), `internal/proxy/headers_test.go` (regression), `README.md` + `policy.example.yaml` (docs/examples).
 - [x] 2026-02-09: Formatting guardrails added (`make fmt`, `make fmtcheck`) and `fmtcheck` enforced by `make check` (CI).
@@ -73,9 +73,9 @@
 - Upstream header forwarding is intentionally explicit: `Authorization` is forwarded; additional headers require `policy.http.forward_headers` to avoid accidental secret propagation.
 - `docs/PLAN.md` checklist had drifted out of sync with implementation; keeping this updated prevents false-positive backlog detection in automation loops.
 - `govet` defer diagnostics caught an early latency-measurement bug; keeping `make check` mandatory before push prevented incorrect metrics shipping.
-- Market scan (2026-02-09, untrusted): MCP gateways commonly emphasize Streamable HTTP/SSE support and session management for web clients, plus optional auth/rate limiting/observability when exposed beyond localhost.
-  Sources: https://github.com/atrawog/mcp-streamablehttp-proxy, https://github.com/sigbit/mcp-auth-proxy, https://github.com/microsoft/mcp-gateway, https://github.com/matthisholleville/mcp-gateway, https://github.com/docker/mcp-gateway, https://github.com/lasso-security/mcp-gateway, https://github.com/Kuadrant/mcp-gateway.
-- Gap map (2026-02-09): Missing: Streamable HTTP/session semantics beyond SSE passthrough; Weak: explicit upstream header-forwarding policy/docs; Parity: SSE passthrough + opt-in Origin allowlist; Differentiator: schema gating + record/replay for deterministic tests.
+- Market scan (2026-02-10, untrusted): MCP gateways in the wild cluster into (1) “auth front-doors” for existing MCP servers, and (2) “gateways/registries” that aggregate many servers and add middleware. Transport bridging (stdio <-> HTTP/SSE/Streamable HTTP), session isolation, and observability (Prometheus/OTEL) show up frequently once the gateway is network-exposed.
+  Sources: https://github.com/sigbit/mcp-auth-proxy, https://github.com/matthisholleville/mcp-gateway, https://github.com/dgellow/mcp-front, https://github.com/IBM/mcp-context-forge, https://model-context-protocol.com/servers/mcp-gateway-stdio-http-rest-api.
+- Gap map (2026-02-10): Missing: Streamable HTTP/session semantics beyond SSE passthrough; Weak: CI runtime smoke coverage (now addressed) and endpoint routing semantics; Parity: SSE passthrough + opt-in Origin allowlist + Prometheus text exposition; Differentiator: schema gating + record/replay for deterministic tests.
 
 ## Notes
 - This file is maintained by the autonomous clone loop.

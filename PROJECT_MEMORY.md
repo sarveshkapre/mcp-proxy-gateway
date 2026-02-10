@@ -85,3 +85,21 @@
 - Follow-ups:
   - Prioritize Streamable HTTP/SSE support as the next parity feature.
   - Add optional `Origin` allowlist hardening to reduce browser-initiated request risk when bound beyond localhost.
+
+## Entry: 2026-02-10 - CI Fixes: /metrics Routing + CI Smoke
+- Decision: Route by path first so disabled Prometheus exposition (`GET /metrics`) returns `404` (instead of `405`), and treat unknown endpoints as `404` while keeping `GET /rpc` as `405`.
+- Why: CI was failing because `/metrics` was falling through the generic “POST-only” gate; the resulting behavior was confusing (and incorrectly suggested `/metrics` existed but disallowed methods). Path-first routing is the expected HTTP shape for this gateway.
+- Evidence:
+  - Code: `internal/proxy/proxy.go`
+  - Tests: `internal/proxy/proxy_test.go` (`TestMetricsPromDisabledReturns404`, `TestUnknownPathReturns404`, `TestRPCEndpointWrongMethodReturns405`)
+  - CI: GitHub Actions run `21836360939` failure resolved by `384189c`
+  - Workflow hardening: run `make smoke` in CI; bump CI Go version to avoid implicit toolchain downloads for `golangci-lint`; make `scripts/smoke.sh` port- and tmp-safe.
+  - Verification:
+    - `go test ./...` (pass)
+    - `make check` (pass)
+    - `make smoke` (pass)
+- Commit: `384189c` (routing fix) + `8d3bf04` (CI smoke + smoke hardening + CI Go bump + routing tests)
+- Confidence: high
+- Trust label: verified-local
+- Follow-ups:
+  - Add docs note for `/metrics` explicitly being “404 unless enabled” if user confusion recurs.
