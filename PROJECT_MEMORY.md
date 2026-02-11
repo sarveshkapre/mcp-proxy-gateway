@@ -103,3 +103,22 @@
 - Trust label: verified-local
 - Follow-ups:
   - Add docs note for `/metrics` explicitly being “404 unless enabled” if user confusion recurs.
+
+## Recent Decisions (2026-02-11)
+- 2026-02-11 | Add `POST /mcp` compatibility alias with the same method guard and handler semantics as `POST /rpc` | Many MCP gateway clients/tools expect an `/mcp` endpoint shape; aliasing improves transport compatibility without changing core JSON-RPC behavior | `internal/proxy/proxy.go`, `internal/proxy/proxy_test.go`, `scripts/smoke.sh`, `README.md`, `docs/PROJECT.md` | `36b90fc` | high | trusted
+- 2026-02-11 | Enforce strict SSE negotiation for single requests (`Accept: text/event-stream` required before SSE passthrough) | Prevents non-stream clients from unexpectedly receiving SSE payloads while preserving explicit streaming behavior | `internal/proxy/proxy.go`, `internal/proxy/stream_test.go`, `internal/proxy/proxy_test.go`, `README.md` | `36b90fc` | high | trusted
+- 2026-02-11 | Add handler-level benchmark coverage for batch replay-hit and batch upstream proxy paths | Provides local performance baselines at the HTTP handler layer (beyond replay-store micro-benchmarks) | `internal/proxy/proxy_benchmark_test.go`, benchmark output below | `36b90fc` | high | trusted
+- 2026-02-11 | Refresh bounded market expectations for MCP gateways (transport endpoint compatibility, explicit streaming negotiation, streamable HTTP trajectory) | Aligns near-term backlog with external baseline patterns while retaining local-first scope | Sources: https://github.com/matthisholleville/mcp-gateway, https://github.com/sigbit/mcp-auth-proxy, https://github.com/dgellow/mcp-front, https://github.com/IBM/mcp-context-forge, https://modelcontextprotocol.io/docs/concepts/transports | n/a | medium | untrusted
+
+## Mistakes And Fixes (2026-02-11)
+- Root cause: Single-request proxy logic streamed upstream SSE whenever upstream returned `Content-Type: text/event-stream`, even when client did not request streaming.
+  Fix: Require client `Accept: text/event-stream` before SSE passthrough; otherwise return JSON-RPC upstream error.
+  Prevention rule: Treat streaming as an explicit capability negotiation (client signal + upstream signal), not upstream-content-type-only.
+
+## Verification Evidence (2026-02-11)
+- `go test ./...` | pass
+- `go test ./internal/proxy -run '^$' -bench 'BenchmarkServeHTTPBatch' -benchmem` | pass
+- `make check` | pass
+- `make smoke` | pass
+- `gh issue list --limit 50 --json number,title,author,state,labels,updatedAt` | pass (no open issues)
+- `gh run view 21836360939 --json ...` | pass (historical failure confirmed; now superseded by green runs)

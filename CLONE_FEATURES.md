@@ -7,22 +7,38 @@
 - Gaps found during codebase exploration
 
 ## Candidate Features To Do
-- [ ] SESSION P1: Tighten and document SSE/replay/batch interactions (unsupported combos) and add targeted regression coverage.
+- [ ] BACKLOG P1: Add optional request correlation support (`X-Request-Id` generation + upstream forwarding + recorder correlation metadata).
   Scoring: impact=med effort=med fit=high diff=quality risk=low confidence=med
-- [ ] BACKLOG P2: Add handler-level benchmarks for batch proxy throughput and replay lookup hot paths (beyond micro-benchmarks).
-  Scoring: impact=low effort=med fit=med diff=quality risk=low confidence=med
-- [ ] BACKLOG P2: Add integration tests for streaming + replay/strict interactions and batch behavior (explicitly document unsupported combos).
-  Scoring: impact=med effort=med fit=med diff=parity risk=med confidence=med
-- [ ] BACKLOG P3: Add optional Prometheus labels for key dimensions (replay match mode, upstream configured) without exploding cardinality.
-  Scoring: impact=low effort=med fit=med diff=nice risk=med confidence=low
-- [ ] BACKLOG P3: Add an opt-in request ID propagation story (`X-Request-Id` generation + forwarding + log correlation).
-  Scoring: impact=low effort=med fit=med diff=nice risk=low confidence=med
-- [ ] BACKLOG P3: Add optional pprof/debug endpoints behind an explicit flag (local-only) for performance investigations.
-  Scoring: impact=low effort=low fit=med diff=quality risk=low confidence=med
-- [ ] BACKLOG P3: Extend streaming support beyond SSE passthrough (Streamable HTTP/session semantics) while preserving local-first defaults.
+- [ ] BACKLOG P1: Add optional pprof/debug endpoints behind an explicit flag and localhost-only binding guard.
+  Scoring: impact=med effort=low fit=med diff=quality risk=low confidence=med
+- [ ] BACKLOG P1: Add per-tool validation reject counters in `/metricsz` and `/metrics` with bounded cardinality controls.
+  Scoring: impact=med effort=med fit=med diff=quality risk=med confidence=med
+- [ ] BACKLOG P1: Add upstream retry policy for transient network failures with strict idempotency-safe defaults.
+  Scoring: impact=med effort=med fit=med diff=parity risk=med confidence=low
+- [ ] BACKLOG P2: Extend replay verification tooling with a CLI command to detect stale/invalid NDJSON recordings.
+  Scoring: impact=med effort=med fit=high diff=differentiator risk=low confidence=med
+- [ ] BACKLOG P2: Add a dedicated integration test suite that boots gateway+stub upstream and verifies record/replay lifecycle end-to-end.
+  Scoring: impact=med effort=med fit=high diff=quality risk=low confidence=med
+- [ ] BACKLOG P2: Support configurable upstream URL allowlist/denylist constraints to reduce SSRF risk when automated launch wrappers are used.
+  Scoring: impact=med effort=med fit=med diff=security risk=med confidence=low
+- [ ] BACKLOG P2: Add graceful upstream circuit-breaker controls (open/half-open) as optional policy for noisy failure periods.
   Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
+- [ ] BACKLOG P2: Add optional OpenTelemetry traces/spans export for request flow visibility (kept opt-in/local-first).
+  Scoring: impact=med effort=high fit=med diff=parity risk=med confidence=low
+- [ ] BACKLOG P3: Add Prometheus labels for key dimensions (`replay_match`, `upstream_configured`) without cardinality explosion.
+  Scoring: impact=low effort=med fit=med diff=nice risk=med confidence=low
+- [ ] BACKLOG P3: Extend streaming support beyond SSE passthrough to Streamable HTTP/session semantics while preserving local-first defaults.
+  Scoring: impact=high effort=high fit=high diff=parity risk=med confidence=low
+- [ ] BACKLOG P3: Add a minimal web UI inspector for local replay records (read-only) for developer ergonomics.
+  Scoring: impact=low effort=high fit=low diff=differentiator risk=med confidence=low
 
 ## Implemented
+- [x] 2026-02-11: Add MCP endpoint compatibility by accepting `POST /mcp` as an alias to `POST /rpc`, with method-guard parity and smoke coverage.
+  Evidence: `internal/proxy/proxy.go`, `internal/proxy/proxy_test.go` (`TestMCPEndpointPostAlias`, `TestMCPEndpointWrongMethodReturns405`), `scripts/smoke.sh`, `README.md`, `docs/PROJECT.md`, `cmd/mcp-proxy-gateway/main.go`.
+- [x] 2026-02-11: Tighten SSE semantics so single-request SSE passthrough only occurs when client explicitly requests `Accept: text/event-stream`; otherwise return JSON-RPC upstream error.
+  Evidence: `internal/proxy/proxy.go`, `internal/proxy/stream_test.go` (`TestUnexpectedSSEWithoutClientAcceptReturnsJSONRPCError`), `internal/proxy/proxy_test.go` (`TestSingleReplayHitWithSSEAcceptStillReturnsJSON`), `README.md`.
+- [x] 2026-02-11: Add handler-level benchmarks for proxy batch replay-hit and upstream forwarding paths.
+  Evidence: `internal/proxy/proxy_benchmark_test.go`, command `go test ./internal/proxy -run '^$' -bench 'BenchmarkServeHTTPBatch' -benchmem`.
 - [x] 2026-02-10: Fix routing semantics so disabled Prometheus exposition (`/metrics`) returns `404` (and unknown paths return `404`, not `405`).
   Evidence: `internal/proxy/proxy.go`, `internal/proxy/proxy_test.go`, GitHub Actions CI run fix.
 - [x] 2026-02-10: Run `make smoke` in CI and harden `scripts/smoke.sh` to avoid port/tmp collisions; bump CI Go version to match tooling.
@@ -76,6 +92,9 @@
 - Market scan (2026-02-10, untrusted): MCP gateways in the wild cluster into (1) “auth front-doors” for existing MCP servers, and (2) “gateways/registries” that aggregate many servers and add middleware. Transport bridging (stdio <-> HTTP/SSE/Streamable HTTP), session isolation, and observability (Prometheus/OTEL) show up frequently once the gateway is network-exposed.
   Sources: https://github.com/sigbit/mcp-auth-proxy, https://github.com/matthisholleville/mcp-gateway, https://github.com/dgellow/mcp-front, https://github.com/IBM/mcp-context-forge, https://model-context-protocol.com/servers/mcp-gateway-stdio-http-rest-api.
 - Gap map (2026-02-10): Missing: Streamable HTTP/session semantics beyond SSE passthrough; Weak: CI runtime smoke coverage (now addressed) and endpoint routing semantics; Parity: SSE passthrough + opt-in Origin allowlist + Prometheus text exposition; Differentiator: schema gating + record/replay for deterministic tests.
+- Market scan (2026-02-11, untrusted): Transport-facing MCP gateways commonly expose an `/mcp`-style endpoint and increasingly separate SSE negotiation from baseline JSON transport; explicit non-stream fallback behavior is expected for compatibility.
+  Sources: https://github.com/matthisholleville/mcp-gateway, https://github.com/sigbit/mcp-auth-proxy, https://github.com/dgellow/mcp-front, https://github.com/IBM/mcp-context-forge, https://modelcontextprotocol.io/docs/concepts/transports.
+- Gap map (2026-02-11): Missing: Streamable HTTP session semantics; Weak: explicit transport compatibility docs and single-request SSE negotiation guardrails (addressed in this session); Parity: `/mcp` endpoint compatibility plus SSE passthrough; Differentiator: deterministic record/replay with schema-gated `tools/call`.
 
 ## Notes
 - This file is maintained by the autonomous clone loop.

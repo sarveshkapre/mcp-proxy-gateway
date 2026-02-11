@@ -1,5 +1,12 @@
 # INCIDENTS
 
+## 2026-02-11 - SSE Negotiation Gap on Single Requests (Pre-merge)
+- Summary: The single-request path would stream upstream SSE whenever upstream returned `text/event-stream`, even when the client did not request SSE.
+- Impact: Non-stream JSON clients could receive streaming payloads unexpectedly, causing parse/UX failures and inconsistent transport semantics.
+- Root cause: SSE passthrough gate depended only on upstream `Content-Type`, not client `Accept`.
+- Fix: Require explicit client `Accept: text/event-stream` plus upstream SSE content type before passthrough; otherwise return JSON-RPC upstream error.
+- Prevention rule: For any transport upgrade behavior (streaming, compression, protocol switch), enforce bilateral negotiation checks (client capability signal + upstream response).
+
 ## 2026-02-09 - Latency Defer Evaluation Bug (Pre-merge)
 - Summary: New latency metrics initially used `defer s.metrics.observeLatency(time.Since(start))`, which evaluates `time.Since` immediately and produced incorrect timings.
 - Impact: Incorrect latency bucket accounting; detected before merge by `golangci-lint` (`govet` defers check).
