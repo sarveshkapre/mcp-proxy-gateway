@@ -3,7 +3,7 @@
 Observe and gate MCP tool calls with schema validation, and record/replay for deterministic tests.
 
 ## What it does
-- HTTP JSON-RPC proxy that forwards to an upstream MCP server
+- HTTP JSON-RPC proxy (`POST /rpc`, with `POST /mcp` compatibility alias) that forwards to an upstream MCP server
 - Validates `tools/call` arguments with JSON Schema
 - Records requests/responses to NDJSON
 - Replays recorded calls without an upstream server
@@ -26,7 +26,7 @@ make build
   --record ./records.ndjson
 ```
 
-Send JSON-RPC requests to `http://localhost:8080/rpc`.
+Send JSON-RPC requests to `http://localhost:8080/rpc` (or `http://localhost:8080/mcp`).
 Check health at `http://localhost:8080/healthz`.
 Check metrics at `http://localhost:8080/metricsz`.
 Enable Prometheus metrics at `http://localhost:8080/metrics` with `--prometheus-metrics` (or `policy.http.prometheus_metrics: true`).
@@ -64,7 +64,8 @@ curl -sS -N -X POST http://localhost:8080/rpc \
 ```
 
 Notes:
-- The gateway streams the upstream response bytes as-is when the upstream responds with `Content-Type: text/event-stream`.
+- The gateway streams the upstream response bytes as-is only when the client requested SSE (`Accept: text/event-stream`) and the upstream responds with `Content-Type: text/event-stream`.
+- If the upstream returns SSE but the client did not request SSE, the gateway returns a JSON-RPC upstream error.
 - Streamed responses are not recorded (record/replay is JSON-only).
 - Streamed responses are still subject to `--max-body` (raise it for longer streams).
 - Streaming is only supported for single JSON-RPC requests (not batches).

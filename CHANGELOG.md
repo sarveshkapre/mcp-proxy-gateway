@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## Unreleased
+- Add `POST /mcp` as a JSON-RPC compatibility alias for `POST /rpc`.
+- Tighten SSE negotiation: passthrough now requires both client `Accept: text/event-stream` and upstream `Content-Type: text/event-stream`; unexpected upstream SSE now returns a JSON-RPC upstream error.
+- Add handler-level proxy benchmarks for batch replay-hit and batch upstream forwarding paths.
 - Add optional Prometheus text exposition endpoint at `GET /metrics` (enable via `--prometheus-metrics` or `policy.http.prometheus_metrics`).
 - Extend `/metricsz` JSON payload with `latency_count` and `latency_sum_ms`.
 

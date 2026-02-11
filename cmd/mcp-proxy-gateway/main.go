@@ -117,9 +117,9 @@ func main() {
 
 	logger.Printf("listening on %s", *listen)
 	if enablePromMetrics {
-		logger.Printf("endpoints: POST /rpc, GET /healthz, GET /metricsz, GET /metrics")
+		logger.Printf("endpoints: POST /rpc (/mcp alias), GET /healthz, GET /metricsz, GET /metrics")
 	} else {
-		logger.Printf("endpoints: POST /rpc, GET /healthz, GET /metricsz")
+		logger.Printf("endpoints: POST /rpc (/mcp alias), GET /healthz, GET /metricsz")
 	}
 	if upstreamURL != nil {
 		logger.Printf("upstream %s", upstreamURL.String())

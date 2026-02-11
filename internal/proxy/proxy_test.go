@@ -113,6 +113,34 @@ func TestRPCEndpointWrongMethodReturns405(t *testing.T) {
 	}
 }
 
+func TestMCPEndpointWrongMethodReturns405(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	r := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestMCPEndpointPostAlias(t *testing.T) {
+	srv := NewServer(nil, nil, nil, nil, false, nil, nil, false, 1024, time.Second, nil)
+
+	req := []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(req))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("no upstream configured")) {
+		t.Fatalf("expected no upstream configured error, got=%s", w.Body.String())
+	}
+}
+
 func TestMetricsPromEnabledReturnsText(t *testing.T) {
 	srv := NewServer(nil, nil, nil, nil, false, nil, nil, true, 1024, time.Second, nil)
 
@@ -675,6 +703,36 @@ func TestSingleNotificationReplayHitReturns204(t *testing.T) {
 	}
 	if w.Body.Len() != 0 {
 		t.Fatalf("expected empty body, got=%q", w.Body.String())
+	}
+}
+
+func TestSingleReplayHitWithSSEAcceptStillReturnsJSON(t *testing.T) {
+	storedReq := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"ping","params":{"q":"same"}}`)
+	incomingReq := json.RawMessage(`{"jsonrpc":"2.0","id":77,"method":"ping","params":{"q":"same"}}`)
+
+	replay := mustReplayStore(t, map[string]json.RawMessage{
+		mustSig(t, storedReq): json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`),
+	})
+
+	srv := NewServer(nil, nil, nil, replay, true, nil, nil, false, 1024, time.Second, nil)
+	r := httptest.NewRequest(http.MethodPost, "/rpc", bytes.NewReader(incomingReq))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "text/event-stream")
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type=%q", ct)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if id, ok := out["id"].(float64); !ok || id != 77 {
+		t.Fatalf("expected id=77, got=%v", out["id"])
 	}
 }
 

@@ -89,3 +89,48 @@ func TestSSEPassthroughStreamsAndSkipsRecord(t *testing.T) {
 		t.Fatalf("stat recordPath: %v", err)
 	}
 }
+
+func TestUnexpectedSSEWithoutClientAcceptReturnsJSONRPCError(t *testing.T) {
+	t.Parallel()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, "data: hello\n\n")
+	}))
+	t.Cleanup(upstream.Close)
+
+	upstreamURL := mustParseURL(t, upstream.URL)
+	srv := NewServer(upstreamURL, nil, nil, nil, false, nil, nil, false, 1024, 5*time.Second, nil)
+	gw := httptest.NewServer(srv)
+	t.Cleanup(gw.Close)
+
+	reqBody := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"tool":"web.search","arguments":{"query":"hello"}}}`)
+	req, err := http.NewRequest(http.MethodPost, gw.URL+"/rpc", bytes.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(b))
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type=%q", ct)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !bytes.Contains(body, []byte("requires Accept: text/event-stream")) {
+		t.Fatalf("expected upstream-streaming error, got=%q", string(body))
+	}
+}

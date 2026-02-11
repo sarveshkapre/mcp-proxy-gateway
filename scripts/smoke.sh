@@ -83,6 +83,12 @@ response=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/r
 echo "$response" | grep -q '"jsonrpc"' 
 echo "$response" | grep -q '"Example"'
 
+response_mcp=$(printf "%s" "$REQUEST" | curl -sS -X POST "http://localhost:${PORT}/mcp" \
+  -H 'Content-Type: application/json' \
+  -d @-)
+echo "$response_mcp" | grep -q '"jsonrpc"'
+echo "$response_mcp" | grep -q '"Example"'
+
 notif_status=$(printf "%s" "$NOTIFICATION" | curl -sS -X POST "http://localhost:${PORT}/rpc" \
   -H 'Content-Type: application/json' \
   -d @- \

@@ -225,14 +225,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not found", http.StatusNotFound)
 		}
 		return
-	case "/rpc":
-		// Continue below.
+	case "/rpc", "/mcp":
+		// JSON-RPC endpoints; continue below.
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
-	// /rpc is the only mutating endpoint; enforce POST for everything under it.
+	// /rpc and /mcp are mutating endpoints; enforce POST for both.
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -648,7 +648,8 @@ func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 
-	upstreamHTTPResp, err := s.doUpstream(r.Context(), r, body, wantsEventStream(r))
+	wantsSSE := wantsEventStream(r)
+	upstreamHTTPResp, err := s.doUpstream(r.Context(), r, body, wantsSSE)
 	if err != nil {
 		s.metrics.incUpstreamError()
 		if notification {
@@ -660,8 +661,17 @@ func (s *Server) handleSingle(w http.ResponseWriter, r *http.Request, body []byt
 	}
 	defer upstreamHTTPResp.Body.Close()
 
-	// If the upstream chooses SSE (or other streaming) we pass it through as-is.
+	// Only stream passthrough when the client explicitly requested SSE.
 	if isEventStreamContentType(upstreamHTTPResp.Header.Get("Content-Type")) {
+		if !wantsSSE {
+			s.metrics.incUpstreamError()
+			if notification {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			s.writeJSONRPCError(w, req.ID, jsonrpc.ErrServer, "upstream streaming response requires Accept: text/event-stream", nil)
+			return
+		}
 		if notification {
 			// Notifications never return a response body.
 			w.WriteHeader(http.StatusNoContent)
