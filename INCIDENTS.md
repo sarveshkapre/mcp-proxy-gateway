@@ -275,3 +275,14 @@
 - Evidence: pass_log=logs/20260212-101456-mcp-proxy-gateway-cycle-24.log
 - Commit: pending
 - Confidence: medium
+
+### 2026-02-12T21:21:24Z | Codex execution failure
+- Date: 2026-02-12T21:21:24Z
+- Trigger: Codex execution failure
+- Impact: Repo session did not complete cleanly
+- Root Cause: codex exec returned a non-zero status
+- Fix: Captured failure logs and kept repository in a recoverable state
+- Prevention Rule: Re-run with same pass context and inspect pass log before retrying
+- Evidence: pass_log=logs/20260212-101456-mcp-proxy-gateway-cycle-25.log
+- Commit: pending
+- Confidence: medium
