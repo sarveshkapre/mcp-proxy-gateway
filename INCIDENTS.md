@@ -22,3 +22,14 @@
 - Root cause: Router checked HTTP method before path, so `GET /metrics` (and other unknown GETs) hit the generic “POST-only” guard instead of a `404`.
 - Fix: Route by path first; treat `/metrics` as `404` unless explicitly enabled; keep `/rpc` requiring `POST`.
 - Prevention rule: When adding new endpoints, route by path first and only apply method guards inside the matched endpoint.
+
+### 2026-02-12T20:01:01Z | Codex execution failure
+- Date: 2026-02-12T20:01:01Z
+- Trigger: Codex execution failure
+- Impact: Repo session did not complete cleanly
+- Root Cause: codex exec returned a non-zero status
+- Fix: Captured failure logs and kept repository in a recoverable state
+- Prevention Rule: Re-run with same pass context and inspect pass log before retrying
+- Evidence: pass_log=logs/20260212-101456-mcp-proxy-gateway-cycle-2.log
+- Commit: pending
+- Confidence: medium
